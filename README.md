@@ -1,0 +1,1 @@
+This repo is for my GenAI learnings. Mainly about RAG,Agents, using Langchain . 
