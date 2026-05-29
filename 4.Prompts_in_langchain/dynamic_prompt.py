@@ -30,8 +30,11 @@ If certain information is not available in the paper, respond with: \"Insufficie
 Ensure the summary is clear, accurate, and aligned with the provided style and length.
 
 """,
-input_variables=['paper_input','style_input','length_input']
+input_variables=['paper_input','style_input','length_input'],
+validate_template=True  
 )
+# this is advantage of using the template class as of using simple f-strings . So if forget some input_variables , or added extra variables. 
+# prompt templates can be reused and saved in external file  as json. It gives clean code, and easy debugging. 
 
 
 #fill the place holders
