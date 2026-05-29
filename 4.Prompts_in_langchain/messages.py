@@ -1,3 +1,5 @@
+# list of messages . Static prompt . 
+
 from langchain_core.messages import SystemMessage,HumanMessage, AIMessage
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -10,7 +12,6 @@ model=ChatGoogleGenerativeAI(model='gemini-3.1-flash-lite',max_output_tokens = 1
 messages = [
     SystemMessage(content='You are a helpful assistant'),
     HumanMessage(content='Tell me about langchain'),
-
 ]
 
 result =model.invoke(messages)

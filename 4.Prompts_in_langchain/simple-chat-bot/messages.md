@@ -2,6 +2,6 @@ Langchain has mainly three messages:
 
 system messages, 
 
-user message, 
+Human message, 
 
 ai message
