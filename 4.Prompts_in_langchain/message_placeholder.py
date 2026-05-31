@@ -24,7 +24,8 @@ chat_history = []
 
 # reading the history from file. Acutally the data base is used 
 with open('chat_history.txt','r') as f:
-    chat_history.append(f.readlines())
+    # chat_history.append(f.readlines())
+    chat_history.extend(f.readlines()) # append will not work as messageplaceholder expects the human,ai,messages but appending will create the nested list 
 
 print(chat_history)
 
