@@ -2,7 +2,7 @@ from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
 # from langchain_core.output_parsers import JsonOutputParser
-from langchain.output_parsers import StructuredOutputParser , ResponseSchema
+from langchain.output_parsers import StructuredOutputParser , ResponseSchema  # this doesnot work on modern langchain  
 
 load_dotenv()
 
@@ -26,6 +26,8 @@ schema = [
     ResponseSchema(name='fact_5',description = "Fact 5 about the topic")
 
 ]
+
+parser = StructuredOutputParser.from_response_schema(schema)
 template = PromptTemplate(
     template = 'Give me five facts about {topic} :  {format_instruction}',
     input_variables=['topic'],
@@ -37,3 +39,5 @@ chain = template | model | parser
 result = chain.invoke({'topic': 'Langchain'})
 
 print(result)
+
+
