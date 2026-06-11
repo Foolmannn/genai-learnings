@@ -32,7 +32,7 @@ template2 = PromptTemplate(
 parser = StrOutputParser()
 
 chain = template1 | model | parser | template2 | model | parser 
-# this is chain . What happens is first the template1 is used then 
+# this is chain . What happens is first the template1 is used with the model then parser parses the output and take the necessary output and this act as input for the next template2 and again model is invoke and the parser pases the output and give us the final result. And when the chain is invoke the final output is got  
 
 result = chain.invoke({'topic':"Black Hole"})
 
