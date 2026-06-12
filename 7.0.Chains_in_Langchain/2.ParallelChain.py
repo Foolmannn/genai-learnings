@@ -5,7 +5,7 @@
 # and third model 3 will combine / merge and display 
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_huggingface import HuggingFaceEndpoint
+from langchain_huggingface import HuggingFaceEndpoint,ChatHuggingFace
 from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
 
@@ -19,18 +19,20 @@ load_dotenv()
 
 model1 =ChatGoogleGenerativeAI(model='gemini-3.1-flash-lite')
 
-model2 = HuggingFaceEndpoint(
-    repo_id="CohereLabs/North-Mini-Code-1.0",
+llm2 = HuggingFaceEndpoint(
+    repo_id="deepseek-ai/DeepSeek-V4-Flash",
     task="text-generation",
     max_new_tokens=512
 )
 
-model3 = HuggingFaceEndpoint(
-    repo_id="nvidia/Qwen3.6-35B-A3B-NVFP4",
+llm3 = HuggingFaceEndpoint(
+    repo_id="deepseek-ai/DeepSeek-V4-Pro",
     task="text-generation",
     temperature=0.7, 
     max_new_tokens=512 
 )
+model2 = ChatHuggingFace(llm=llm2)
+model3 = ChatHuggingFace(llm=llm3)
 
 
 prompt1 = PromptTemplate(

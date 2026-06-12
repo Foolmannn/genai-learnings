@@ -1,4 +1,5 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEndpoint,ChatHuggingFace
 
 from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
@@ -13,7 +14,15 @@ prompt = PromptTemplate(
     template='Generate 5 interesting facts about {topic}',
     input_variables=['topic']
 )
-model=ChatGoogleGenerativeAI(model='gemini-3.1-flash-lite')
+# model=ChatGoogleGenerativeAI(model='gemini-3.1-flash-lite')
+llm = HuggingFaceEndpoint(
+    repo_id="deepseek-ai/DeepSeek-R1",
+    task="text-generation",
+    temperature=0.7, 
+    max_new_tokens=512 
+)
+
+model = ChatHuggingFace(llm=llm)
 
 parser = StrOutputParser()
 
