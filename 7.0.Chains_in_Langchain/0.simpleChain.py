@@ -22,3 +22,8 @@ chain = prompt | model | parser
 result = chain.invoke({'topic': "Himalayas"})
 
 print(result)
+
+
+# for visualization 
+
+chain.get_graph().print_ascii()
