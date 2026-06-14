@@ -9,6 +9,7 @@ load_dotenv()
 
 model=ChatGoogleGenerativeAI(model='gemini-3.1-flash-lite')
 
+
 class Review(BaseModel):
     key_themes : list[str] = Field(description="Write down all the key themes discussed in the review in a list ")
     summary : str= Field(description="A breif summary of the review")
