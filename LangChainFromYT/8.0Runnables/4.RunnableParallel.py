@@ -33,3 +33,14 @@ parallel_chain = RunnableParallel(
         'linkedIn': prompt2 | model2 | parser
     }
 )
+
+result = parallel_chain.invoke({'topic':'AI'})
+
+# as result is dictionary of two putputs 
+
+print(result)
+
+{
+    'tweet':  'Here are a few options depending on the "vibe" you want:\n\n**The Visionary/Future-focused:**\n"AI isn’t just a tool; it’s the most significant lever for human creativity we’ve ever built. We’re moving from the era of \'doing\' to the era of \'orchestrating.\' The future belongs to those who learn to collaborate with the machine. 🤖✨ #AI #Innovation #FutureOfWork"', 
+    'linkedIn':  'To give you the best post, I have categorized these by "vibe." Choose the one that best fits your personal brand.\n\n### Option 1: The "Thought Leader" (Focus on human-AI collaboration)\n**Headline:** AI isn’t coming for your job. The person using AI is.\n\nWe’ve spent the last year debating whether AI is a tool or a threat. The reality? It’s a force multiplier. \n\nThe most successful professionals I know aren\'t using AI to "automate their work away." They are using it to:\n✅ Automate the mundane, so'
+ }
