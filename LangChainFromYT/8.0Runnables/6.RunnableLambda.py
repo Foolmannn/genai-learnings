@@ -1,4 +1,5 @@
 # Using Lambda we can add the extra workflow like preprocessing And we can connect to langchain flow by converting it to runnable. 
+# so whenever we need the custom loagic in the AI workflow we can use the Runnable Lambda 
 
 # For ex: we are asking joke . Then we will create our own functioni to count the no of word in the joke. We will not want to ask llm to count the words. 
 
@@ -51,4 +52,5 @@ print(final_chain.invoke({'topic':"AI"}))
 {
 'Joke': 'Why did the AI go to therapy?\n\nBecause it had too many unresolved cache issues.',  
  'count': 15
+
  }

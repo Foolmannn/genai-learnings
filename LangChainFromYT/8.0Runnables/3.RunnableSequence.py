@@ -23,6 +23,10 @@ model=ChatGoogleGenerativeAI(model='gemini-3.1-flash-lite')
 
 parser = StrOutputParser()
 
-chain = RunnableSequence(prompt1,model,parser,prompt2,model,parser)  # this helps us to create the sequencial chian | operator can be used. 
+chain = RunnableSequence(prompt1,model,parser,prompt2,model,parser)  
+# this helps us to create the sequencial chain | operator can be used. 
+
+# As this Runnable sequence is used very widely and most often so LC team create a LCEL (langchain Expression Language  ) . Which is | for the RunnableSequence pipe operator . So this is declarative syntax way to use Sequence . 
+
 
 print(chain.invoke({'topic':"AI"}))
