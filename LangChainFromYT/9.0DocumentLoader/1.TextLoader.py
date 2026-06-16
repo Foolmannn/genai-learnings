@@ -6,6 +6,8 @@ from langchain_core.prompts import PromptTemplate
 
 from dotenv import load_dotenv
 
+# https://docs.langchain.com/oss/python/integrations/document_loaders#all-document-loaders 
+
 load_dotenv()
 
 model=ChatGoogleGenerativeAI(model='gemini-3.1-flash-lite')

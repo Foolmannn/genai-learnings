@@ -1,5 +1,7 @@
 In modern **LangChain**, a **Document Loader** is a component that loads data from different sources (PDFs, text files, web pages, databases, cloud storage, etc.) and converts them into LangChain `Document` objects.
 
+https://docs.langchain.com/oss/python/integrations/document_loaders#all-document-loaders
+
 A `Document` typically looks like:
 
 ```python
