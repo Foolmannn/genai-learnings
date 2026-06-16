@@ -16,7 +16,7 @@ prompt = PromptTemplate(
 )
 parser = StrOutputParser()
 
-loader = TextLoader('cricket.txt', encoding="utf-8")
+loader = TextLoader('cricket.txt', encoding="utf-8") # this encoding is needed as there are some emojis 
 
 
 docs = loader.load()
