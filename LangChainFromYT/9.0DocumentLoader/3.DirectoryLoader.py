@@ -25,6 +25,3 @@ print(docs[326].metadata)
 # this loads from the book and shows the page no ot the book which is 
 
 
-# as we can see for just 3 pdf it is taking a lot of time so for bigger document the it will be worse. And for bigger memory constraints also exists . 
-
-# so the solution is to use the lazy loading. 
