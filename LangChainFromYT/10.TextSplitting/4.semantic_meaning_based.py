@@ -1,4 +1,4 @@
-from langchain_text_splitters import 
+from langchain_experimental import SemanticChunker 
 from langchain_openai.embeddings import OpenAIEmbeddings
 from dotenv import load_dotenv
 
