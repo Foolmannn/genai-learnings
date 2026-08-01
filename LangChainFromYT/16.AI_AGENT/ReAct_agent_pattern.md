@@ -802,3 +802,387 @@ Use a ReAct agent when the task requires **reasoning combined with external acti
 [5]: https://docs.langchain.com/oss/python/migrate/langchain-v1?utm_source=chatgpt.com "LangChain v1 migration guide - Docs by LangChain"
 
 
+With **LangChain v1+**, the recommended way to build an agent is with `create_agent()`. This is the modern replacement for the older `create_react_agent()` API. Under the hood, it creates a LangGraph-powered ReAct agent.
+
+Let's build one step by step.
+
+---
+
+# Project Structure
+
+```
+project/
+│
+├── .env
+├── app.py
+└── requirements.txt
+```
+
+---
+
+## Install Dependencies
+
+```bash
+pip install -U langchain langchain-openai python-dotenv
+```
+
+If you want search capabilities:
+
+```bash
+pip install langchain-tavily
+```
+
+---
+
+## Step 1: Create `.env`
+
+```text
+OPENAI_API_KEY=your_openai_key
+
+# Optional
+TAVILY_API_KEY=your_tavily_key
+```
+
+---
+
+# Step 2: Load Environment Variables
+
+```python
+from dotenv import load_dotenv
+
+load_dotenv()
+```
+
+No need to manually access the API key because `ChatOpenAI` reads it automatically from the environment.
+
+---
+
+# Step 3: Create the LLM
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-4.1-mini",
+    temperature=0
+)
+```
+
+---
+
+# Step 4: Create Tools
+
+A tool is simply a Python function decorated with `@tool`.
+
+Example:
+
+```python
+from langchain.tools import tool
+
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two integers."""
+
+    return a * b
+
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two integers."""
+
+    return a + b
+```
+
+Notice the **docstring**.
+
+The LLM reads the docstring to decide **when** to use the tool.
+
+---
+
+# Step 5: Build the Agent
+
+This is the modern API.
+
+```python
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model=llm,
+    tools=[add, multiply],
+    system_prompt="You are a helpful math assistant."
+)
+```
+
+That's it.
+
+No `AgentExecutor`.
+
+No prompts to pull.
+
+No manual ReAct prompt.
+
+No output parser.
+
+---
+
+# Step 6: Invoke the Agent
+
+```python
+response = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is 15 times 8?"
+            }
+        ]
+    }
+)
+
+print(response)
+```
+
+The output is a state dictionary similar to:
+
+```python
+{
+    "messages": [
+        HumanMessage(...),
+        AIMessage(
+            tool_calls=[
+                {
+                    "name": "multiply",
+                    "args": {
+                        "a": 15,
+                        "b": 8
+                    }
+                }
+            ]
+        ),
+        ToolMessage(...),
+        AIMessage(content="15 × 8 = 120")
+    ]
+}
+```
+
+---
+
+# Complete Example
+
+```python
+from dotenv import load_dotenv
+
+from langchain.agents import create_agent
+from langchain.tools import tool
+from langchain_openai import ChatOpenAI
+
+load_dotenv()
+
+
+llm = ChatOpenAI(
+    model="gpt-4.1-mini",
+    temperature=0
+)
+
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two integers."""
+    return a + b
+
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """Multiply two integers."""
+    return a * b
+
+
+agent = create_agent(
+    model=llm,
+    tools=[add, multiply],
+    system_prompt="You are a helpful assistant."
+)
+
+
+response = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is 45 + 19?"
+            }
+        ]
+    }
+)
+
+print(response["messages"][-1].content)
+```
+
+Output:
+
+```
+64
+```
+
+---
+
+# Example with a Search Tool
+
+Suppose you have a search tool:
+
+```python
+from langchain_tavily import TavilySearch
+
+search = TavilySearch(max_results=3)
+```
+
+Now create the agent:
+
+```python
+agent = create_agent(
+    model=llm,
+    tools=[search],
+    system_prompt="You are an AI research assistant."
+)
+```
+
+Ask:
+
+```python
+response = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Who won the FIFA World Cup in 2022?"
+            }
+        ]
+    }
+)
+
+print(response["messages"][-1].content)
+```
+
+The agent will:
+
+```
+User
+   │
+   ▼
+LLM
+   │
+   ▼
+Search Tool
+   │
+   ▼
+Search Results
+   │
+   ▼
+LLM
+   │
+   ▼
+Final Answer
+```
+
+You don't need to manually orchestrate the loop—the agent handles it.
+
+---
+
+# Streaming Responses
+
+Instead of `invoke()`, you can stream the execution:
+
+```python
+for chunk in agent.stream(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is 25 * 16?"
+            }
+        ]
+    },
+    stream_mode="values"
+):
+    print(chunk)
+```
+
+This lets you observe intermediate messages, including tool calls and results, as they happen.
+
+---
+
+# How `create_agent()` Works Internally
+
+When you write:
+
+```python
+agent = create_agent(
+    model=llm,
+    tools=[add, multiply]
+)
+```
+
+LangChain constructs a LangGraph similar to:
+
+```
+START
+   │
+   ▼
+Model Node
+   │
+   ▼
+Tool Calls?
+ ┌──┴──┐
+ │     │
+Yes    No
+ │      │
+ ▼      ▼
+Tool   END
+ │
+ ▼
+Model
+```
+
+The loop continues until the model produces an AI message with **no tool calls**, at which point the graph ends and returns the final state.
+
+---
+
+## Why this is better than the old API
+
+Old (deprecated):
+
+```python
+prompt = hub.pull("hwchase17/react")
+
+agent = create_react_agent(
+    llm,
+    tools,
+    prompt
+)
+
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools
+)
+```
+
+Modern:
+
+```python
+agent = create_agent(
+    model=llm,
+    tools=tools,
+    system_prompt="You are a helpful assistant."
+)
+```
+
+The modern API is:
+
+* Simpler (fewer moving parts)
+* Built on LangGraph
+* Supports streaming and checkpoints
+* Easier to extend with middleware
+* The recommended approach for new LangChain applications
+
+As you learn further, the next logical step is to understand **how to customize this default agent** with middleware, memory, structured output, and eventually build custom LangGraph workflows when the default ReAct loop isn't enough.
