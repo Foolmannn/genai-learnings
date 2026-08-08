@@ -860,3 +860,435 @@ A useful hierarchy is:
 ```
 
 ---
+
+# 17. Workflow vs Agent
+
+This distinction is extremely important.
+
+### Workflow
+
+You know the execution path.
+
+```text
+START
+ ↓
+Retrieve
+ ↓
+Generate
+ ↓
+Validate
+ ↓
+END
+```
+
+The developer determines the path.
+
+---
+
+### Agent
+
+The LLM determines what to do next.
+
+```text
+             Agent
+               │
+       What should I do?
+        /       |       \
+       ↓        ↓        ↓
+    Search   Calculate  Database
+       │        │        │
+       └────────┼────────┘
+                ↓
+              Agent
+                ↓
+             Finish
+```
+
+LangGraph is excellent for building both.
+
+---
+
+# 18. Deterministic workflow
+
+Suppose you have:
+
+```text
+PDF
+ ↓
+Extract
+ ↓
+Summarize
+ ↓
+Translate
+ ↓
+Store
+```
+
+There is no reason for an LLM to decide the next step.
+
+You can create:
+
+```text
+START
+ ↓
+extract
+ ↓
+summarize
+ ↓
+translate
+ ↓
+store
+ ↓
+END
+```
+
+That's a **workflow**.
+
+LangGraph is useful if you want explicit control.
+
+---
+
+# 19. Agentic workflow
+
+Now imagine:
+
+```text
+User
+ ↓
+Agent
+ ↓
+Should I search?
+ ├── Search
+ ├── Calculate
+ ├── Query DB
+ └── Ask user
+```
+
+The LLM decides what tool to use.
+
+That's an **agent**.
+
+LangGraph can orchestrate that agent and provide:
+
+- state
+- persistence
+- branching
+- loops
+- interrupts
+- human approval
+- retries
+
+---
+
+# 20. Why LangGraph exists
+
+Traditional chains are mostly:
+
+```text
+A → B → C → D
+```
+
+But real agent applications often look like:
+
+```text
+       ┌─────────┐
+       │         ↓
+A → B → C → D → E
+    ↑    │
+    │    ↓
+    └────F
+```
+
+You need:
+
+```text
+cycles
+branches
+state
+interruptions
+persistence
+```
+
+A simple chain abstraction isn't ideal for this.
+
+Graph-based execution is much better.
+
+---
+
+# 21. LangChain Expression Language vs LangGraph
+
+You may also encounter **LCEL**.
+
+For example:
+
+```python
+chain = prompt | llm | parser
+```
+
+This is excellent for straightforward pipelines.
+
+Think:
+
+```text
+Prompt
+  ↓
+LLM
+  ↓
+Parser
+```
+
+LCEL is great for composing operations.
+
+But if you need:
+
+```text
+if condition:
+    A
+else:
+    B
+
+then
+
+while not good:
+    retry()
+
+then
+
+human approval
+```
+
+LangGraph becomes more appropriate.
+
+---
+
+# 22. Simple rule for choosing
+
+Use this mental decision tree:
+
+```text
+                    Start
+                      │
+                      ↓
+             Is it just LLM work?
+                /           \
+              Yes            No
+               ↓              ↓
+          LangChain       Multiple steps?
+                              │
+                         ┌────┴────┐
+                        No         Yes
+                        ↓           ↓
+                    LangChain   Need control
+                                   flow?
+                                     │
+                                ┌────┴────┐
+                               No         Yes
+                               ↓           ↓
+                          LangChain    LangGraph
+                                           │
+                                           ↓
+                                    Complex Agent
+```
+
+---
+
+# 23. What I recommend you learn
+
+Since you're already studying:
+
+- LangChain
+- tool calling
+- agents
+- RAG
+- ReAct
+- LangGraph
+
+I would **not** learn them as completely separate frameworks.
+
+Learn them in this order:
+
+### Phase 1 — LLM fundamentals
+
+```text
+Chat models
+Messages
+Prompts
+Structured output
+Streaming
+```
+
+↓
+
+### Phase 2 — LangChain core
+
+```text
+Tools
+Tool calling
+Retrievers
+Embeddings
+Vector stores
+Document loaders
+Text splitters
+RAG
+```
+
+↓
+
+### Phase 3 — Agents
+
+```text
+Agent
+Tool selection
+Tool execution
+Agent loop
+Middleware
+Structured responses
+```
+
+↓
+
+### Phase 4 — LangGraph
+
+```text
+State
+ ↓
+Nodes
+ ↓
+Edges
+ ↓
+Conditional edges
+ ↓
+Loops
+ ↓
+Persistence
+ ↓
+Checkpointing
+ ↓
+Interrupts
+ ↓
+Human-in-the-loop
+ ↓
+Subgraphs
+```
+
+↓
+
+### Phase 5 — Advanced agents
+
+```text
+Single-agent systems
+       ↓
+Multi-agent systems
+       ↓
+Supervisor
+       ↓
+Hierarchical agents
+       ↓
+Reflection
+       ↓
+Planning
+       ↓
+Evaluator
+       ↓
+Long-running agents
+```
+
+---
+
+# 24. The biggest misconception
+
+Don't think:
+
+> "LangChain is old and LangGraph is the replacement."
+
+That's not the right mental model.
+
+Instead:
+
+```text
+LangChain
+   =
+LLM application building blocks
+```
+
+while:
+
+```text
+LangGraph
+   =
+stateful orchestration/runtime for complex workflows and agents
+```
+
+They complement each other.
+
+---
+
+# 25. A real-world architecture
+
+For a production AI application, you might have:
+
+```text
+                       Frontend
+                          │
+                          ↓
+                       API
+                          │
+                          ↓
+                    LangGraph
+                  Agent Workflow
+                          │
+        ┌─────────────────┼──────────────────┐
+        │                 │                  │
+        ↓                 ↓                  ↓
+     Agent             RAG Node          Validation
+        │                 │                  │
+        ↓                 ↓                  ↓
+   LangChain          Retriever           LLM
+   Tools              Vector DB
+        │
+        ↓
+      APIs
+```
+
+And surrounding that:
+
+```text
+                    LangSmith
+                       │
+        ┌──────────────┼──────────────┐
+        ↓              ↓              ↓
+     Tracing        Evaluation     Monitoring
+```
+
+So the ecosystem starts looking like:
+
+```text
+             ┌───────────────────────┐
+             │       LangSmith       │
+             │ Observability/Eval    │
+             └───────────┬───────────┘
+                         │
+             ┌───────────▼───────────┐
+             │       LangGraph       │
+             │ Orchestration/State   │
+             └───────────┬───────────┘
+                         │
+             ┌───────────▼───────────┐
+             │       LangChain       │
+             │ AI Building Blocks    │
+             └───────────┬───────────┘
+                         │
+              ┌──────────┴──────────┐
+              ↓                     ↓
+             LLMs                Tools
+```
+
+That is a much better mental model of the **modern LangChain ecosystem** than treating LangChain and LangGraph as competing alternatives.
+
+## In one sentence
+
+> **Use LangChain when you primarily need to build the pieces of an LLM application; use LangGraph when you need to control how those pieces interact over multiple steps, state, branches, loops, persistence, or human intervention.**
+
+And in practice, **the sweet spot is often LangChain for the components + LangGraph for the orchestration + LangSmith for tracing/evaluation.**
+
+---
