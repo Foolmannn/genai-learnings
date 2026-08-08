@@ -547,3 +547,316 @@ def answer_node(state):
 The nodes communicate through state.
 
 ---
+
+# 10. LangChain Agent vs LangGraph Agent
+
+This is where things become especially important given your recent work with **ReAct agents and tool calling**.
+
+Older LangChain examples often looked like:
+
+```python
+agent = create_react_agent(...)
+
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools
+)
+```
+
+Modern LangChain has evolved significantly, and you should avoid learning the older patterns as your primary approach.
+
+Modern agent construction can be much simpler:
+
+```python
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model=llm,
+    tools=[search_tool, calculator_tool]
+)
+
+result = agent.invoke({
+    "messages": [
+        {
+            "role": "user",
+            "content": "What is 25 * 40?"
+        }
+    ]
+})
+```
+
+Conceptually:
+
+```text
+User
+ ↓
+Agent
+ ↓
+LLM
+ ↓
+Does it need tool?
+ ├── No → Response
+ │
+ └── Yes
+       ↓
+      Tool
+       ↓
+      LLM
+       ↓
+     Response
+```
+
+The agent runtime itself can be backed by graph-based orchestration.
+
+This is why you should distinguish:
+
+> **Using a high-level LangChain agent**
+
+from
+
+> **Building a custom LangGraph workflow**
+
+---
+
+# 11. Don't use LangGraph just because you can
+
+This is a common mistake.
+
+Suppose you have:
+
+```text
+User
+ ↓
+LLM
+ ↓
+Answer
+```
+
+Someone might write a LangGraph application with:
+
+```text
+START
+ ↓
+model
+ ↓
+END
+```
+
+Technically possible.
+
+But unnecessary.
+
+LangGraph adds complexity.
+
+Use the simplest abstraction that solves your problem.
+
+---
+
+# 12. Decision table
+
+| Requirement | LangChain | LangGraph |
+|---|---:|---:|
+| Simple LLM call | ✅ | ❌ |
+| Prompt + LLM | ✅ | ❌ |
+| Structured output | ✅ | ❌ |
+| Tool calling | ✅ | ❌ |
+| Simple chatbot | ✅ | ❌ |
+| Basic RAG | ✅ | ❌ |
+| Embeddings | ✅ | ❌ |
+| Vector database | ✅ | ❌ |
+| Simple agent | ✅ | ❌/optional |
+| Multi-step agent | ✅ | ✅ |
+| Conditional routing | ⚠️ | ✅ |
+| Complex workflows | ⚠️ | ✅ |
+| Loops | ⚠️ | ✅ |
+| Multiple agents | ⚠️ | ✅ |
+| Persistent state | ⚠️ | ✅ |
+| Human-in-the-loop | ⚠️ | ✅ |
+| Checkpointing | ❌/limited | ✅ |
+| Long-running workflows | ❌ | ✅ |
+| Complex error recovery | ⚠️ | ✅ |
+| Agent orchestration | ⚠️ | ✅ |
+| Fine-grained execution control | ❌ | ✅ |
+
+---
+
+# 13. A practical example
+
+Imagine you're building an **AI research assistant**.
+
+User asks:
+
+> "Research LangGraph and give me a comparison with LangChain."
+
+A naive application:
+
+```text
+User
+ ↓
+LLM
+ ↓
+Answer
+```
+
+The model might hallucinate information.
+
+Instead:
+
+```text
+User
+ ↓
+Query Analyzer
+ ↓
+Research Planner
+ ↓
+Search Web
+ ↓
+Analyze Sources
+ ↓
+Are sources sufficient?
+     │
+   No│
+     ↓
+Search More
+     │
+     └───────→ Analyze Sources
+     
+     Yes
+      ↓
+Generate Report
+      ↓
+Fact Checker
+      ↓
+Does report pass?
+    /      \
+  No        Yes
+  ↓          ↓
+Revise      END
+```
+
+This is a **LangGraph problem**.
+
+Why?
+
+Because you have:
+
+```text
+State
++
+Loops
++
+Conditional branches
++
+Multiple steps
++
+Validation
+```
+
+---
+
+# 14. Another example: coding agent
+
+Imagine:
+
+> "Build a REST API for my application."
+
+Your agent could have:
+
+```text
+                User
+                  ↓
+              Planner
+                  ↓
+             ┌────┴────┐
+             ↓         ↓
+          Coder     Researcher
+             ↓         ↓
+             └────┬────┘
+                  ↓
+               Tester
+                  ↓
+             Tests pass?
+              /      \
+            No        Yes
+            ↓          ↓
+          Debug      Reviewer
+            ↓          ↓
+            └──────────┘
+                  ↓
+                END
+```
+
+This is exactly the kind of workflow where LangGraph shines.
+
+---
+
+# 15. LangChain + LangGraph together
+
+This is probably the architecture you should learn.
+
+```text
+                    APPLICATION
+                         │
+                    LangGraph
+                         │
+              ┌──────────┼──────────┐
+              │          │          │
+            Node       Node       Node
+              │          │          │
+              ↓          ↓          ↓
+          LangChain   LangChain   Custom
+          Agent       Retriever   Python
+              │          │
+              ↓          ↓
+             LLM       Vector DB
+```
+
+For example:
+
+```python
+from langchain.chat_models import init_chat_model
+from langchain.tools import tool
+
+llm = init_chat_model(...)
+
+@tool
+def search_database(query: str):
+    ...
+
+@tool
+def calculate(expression: str):
+    ...
+```
+
+Then LangGraph controls how these components interact.
+
+---
+
+# 16. Think about abstraction levels
+
+A useful hierarchy is:
+
+```text
+                    AI APPLICATION
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │   LangGraph   │
+                  │ Orchestration │
+                  └───────┬───────┘
+                          │
+                 ┌────────┴────────┐
+                 │                 │
+              Agents           Workflows
+                 │                 │
+                 └────────┬────────┘
+                          │
+                    LangChain
+                          │
+       ┌─────────┬────────┼─────────┬──────────┐
+       ↓         ↓        ↓         ↓          ↓
+     Models    Tools    RAG      Prompts   Structured
+                                              Output
+```
+
+---
