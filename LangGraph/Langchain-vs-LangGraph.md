@@ -302,3 +302,248 @@ LangGraph
 
 ---
 
+# 6. When should you use LangChain?
+
+Use primarily **LangChain** when your application is relatively straightforward.
+
+### Example 1 — Simple chatbot
+
+```python
+response = llm.invoke(
+    "Explain gradient descent"
+)
+```
+
+You don't need a graph.
+
+---
+
+## Example 2 — Simple RAG
+
+Suppose:
+
+```text
+PDF
+ ↓
+Loader
+ ↓
+Splitter
+ ↓
+Embeddings
+ ↓
+Vector DB
+ ↓
+Retriever
+ ↓
+LLM
+ ↓
+Answer
+```
+
+This can be built using LangChain components.
+
+You don't necessarily need LangGraph.
+
+---
+
+# 7. Example: Simple RAG with LangChain
+
+Conceptually:
+
+```python
+documents = loader.load()
+
+chunks = splitter.split_documents(documents)
+
+vectorstore = ...
+
+retriever = vectorstore.as_retriever()
+
+docs = retriever.invoke(
+    "What is the refund policy?"
+)
+
+response = llm.invoke(
+    f"""
+    Answer the question using these documents:
+
+    {docs}
+
+    Question:
+    What is the refund policy?
+    """
+)
+```
+
+This is basically:
+
+```text
+Question
+   ↓
+Retriever
+   ↓
+Documents
+   ↓
+LLM
+   ↓
+Answer
+```
+
+LangGraph would be unnecessary unless you need more complex control.
+
+---
+
+# 8. When should you use LangGraph?
+
+Use LangGraph when your application has **multiple steps with state and control flow**.
+
+Especially when you have:
+
+### 1. Loops
+
+```text
+Agent
+ ↓
+Tool
+ ↓
+Agent
+ ↓
+Tool
+ ↓
+Agent
+ ↓
+Answer
+```
+
+---
+
+### 2. Conditional routing
+
+```text
+                 Request
+                    ↓
+                Classifier
+                    ↓
+          ┌─────────┼─────────┐
+          ↓         ↓         ↓
+       Billing   Technical  General
+```
+
+---
+
+### 3. Multiple agents
+
+```text
+              Supervisor
+                   │
+        ┌──────────┼──────────┐
+        ↓          ↓          ↓
+   Researcher   Coder      Reviewer
+        │          │          │
+        └──────────┼──────────┘
+                   ↓
+                Final
+```
+
+---
+
+### 4. Human approval
+
+For example:
+
+```text
+AI decides:
+"Refund customer $5,000"
+
+             ↓
+
+        Human approval
+          /       \
+        Reject    Approve
+          ↓         ↓
+         END       Tool
+```
+
+This is a major reason to use LangGraph.
+
+---
+
+### 5. Persistent state
+
+Suppose your agent needs to remember:
+
+```python
+state = {
+    "messages": [...],
+    "user_id": "...",
+    "research": [...],
+    "approved": False,
+    "tool_results": [...],
+}
+```
+
+The graph can manipulate this state throughout execution.
+
+---
+
+# 9. State is the key LangGraph concept
+
+This is probably the **single most important concept** to understand.
+
+You define a state:
+
+```python
+from typing_extensions import TypedDict
+
+class State(TypedDict):
+    messages: list
+    research: str
+    answer: str
+```
+
+Then nodes operate on that state.
+
+```text
+                 State
+                   │
+        ┌──────────┼──────────┐
+        ↓          ↓          ↓
+    Research     Agent     Validator
+        │          │          │
+        └──────────┼──────────┘
+                   ↓
+                 State
+```
+
+For example:
+
+```python
+def research_node(state):
+    result = search(state["messages"][-1])
+
+    return {
+        "research": result
+    }
+```
+
+Another node:
+
+```python
+def answer_node(state):
+    response = llm.invoke(
+        f"""
+        Research:
+        {state['research']}
+
+        Answer the user.
+        """
+    )
+
+    return {
+        "answer": response.content
+    }
+```
+
+The nodes communicate through state.
+
+---
