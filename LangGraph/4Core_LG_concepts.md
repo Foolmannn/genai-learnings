@@ -2024,5 +2024,5 @@ Keep this in your head while learning LangGraph:
 
 **If you deeply understand `State → Node → Edge → Conditional Edge → Loop → Compile → Invoke`, you have the foundation required for the rest of LangGraph.**
 
-For the next step, the most useful progression is **Sequential Workflows → Parallel Workflows → Conditional Workflows → Iterative/Loop Workflows → Tool-Calling Agent → Persistence/Memory → Human-in-the-Loop**. The official docs' graph API and quickstart follow essentially this progression from graph construction into conditional agent loops. ([Docs by LangChain](https://docs.langchain.com/oss/python/langgraph/graph-api?utm_source=chatgpt.com))
+For the next step, the most useful progression is **Sequential Workflows → Parallel Workflows → Conditional Workflows → Iterative/Loop Workflows → Tool-Calling Agent → Persistence/Memory → Human-in-the-Loop**. The official docs' graph API and quickstart follow essentially this progression from graph construction into conditional agent loops. ([Docs by LangChain](https://docs.langchain.com/oss/python/langgraph/graph-api?utm_source=chatgpt.com))*890-=
 
