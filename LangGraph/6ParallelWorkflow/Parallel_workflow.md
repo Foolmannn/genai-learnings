@@ -1097,3 +1097,998 @@ Send(process_document, doc3)
 These become parallel work items.
 
 ---
+
+# 26. Why `Send` Is Powerful
+
+Imagine a user's query requires processing:
+
+```text
+10 PDFs
+```
+
+You don't know in advance that there will be exactly 10.
+
+Tomorrow there might be:
+
+```text
+100 PDFs
+```
+
+or:
+
+```text
+1000 PDFs
+```
+
+A static graph is awkward for this.
+
+Dynamic fan-out gives:
+
+```text
+documents
+   ↓
+fan-out
+   ↓
+N processing tasks
+   ↓
+fan-in
+   ↓
+result
+```
+
+This is essentially a dynamic map-reduce workflow.
+
+---
+
+# 27. Reducers and Parallel State Updates
+
+Dynamic parallelism introduces an important problem.
+
+Suppose 10 workers produce:
+
+```python
+{
+    "result": "..."
+}
+```
+
+You need to tell LangGraph how multiple updates to the same state field should be combined.
+
+This is where **reducers** become important.
+
+For example:
+
+```python
+from typing import Annotated
+import operator
+
+
+class State(TypedDict):
+    results: Annotated[list[str], operator.add]
+```
+
+The annotation tells LangGraph that updates to `results` should be accumulated.
+
+Suppose workers return:
+
+```python
+{"results": ["Result A"]}
+```
+
+and:
+
+```python
+{"results": ["Result B"]}
+```
+
+and:
+
+```python
+{"results": ["Result C"]}
+```
+
+The reducer combines them conceptually into:
+
+```python
+{
+    "results": [
+        "Result A",
+        "Result B",
+        "Result C"
+    ]
+}
+```
+
+This is extremely important when working with dynamic parallel workflows.
+
+---
+
+# 28. Reducer vs Normal State Field
+
+Consider:
+
+```python
+class State(TypedDict):
+    result: str
+```
+
+This represents one value:
+
+```text
+result = "something"
+```
+
+But:
+
+```python
+class State(TypedDict):
+    results: Annotated[list[str], operator.add]
+```
+
+represents accumulated values:
+
+```text
+results = [
+    result1,
+    result2,
+    result3
+]
+```
+
+So:
+
+```text
+Normal field
+     ↓
+single update/value
+
+Reducer field
+     ↓
+multiple updates
+     ↓
+combined result
+```
+
+---
+
+# 29. A Practical Map-Reduce Example
+
+Suppose we want to summarize several pieces of text.
+
+```python
+from typing import TypedDict, Annotated
+import operator
+
+from langgraph.graph import StateGraph, START, END
+from langgraph.constants import Send
+```
+
+State:
+
+```python
+class OverallState(TypedDict):
+    documents: list[str]
+    summaries: Annotated[list[str], operator.add]
+    final_summary: str
+```
+
+Worker state:
+
+```python
+class DocumentState(TypedDict):
+    document: str
+```
+
+Worker:
+
+```python
+def summarize_document(state: DocumentState):
+
+    document = state["document"]
+
+    summary = f"Summary of: {document}"
+
+    return {
+        "summaries": [summary]
+    }
+```
+
+---
+
+# 30. Fan-Out Function
+
+```python
+def fan_out_documents(state: OverallState):
+
+    return [
+        Send(
+            "summarize",
+            {
+                "document": document
+            }
+        )
+        for document in state["documents"]
+    ]
+```
+
+This dynamically creates one task for each document.
+
+---
+
+# 31. Reduce Node
+
+```python
+def reduce_summaries(state: OverallState):
+
+    combined = "\n\n".join(
+        state["summaries"]
+    )
+
+    return {
+        "final_summary": combined
+    }
+```
+
+Graph conceptually becomes:
+
+```text
+                 ┌→ summarize(doc1) ─┐
+                 │                   │
+                 ├→ summarize(doc2) ─┤
+START → fan-out ─┼→ summarize(doc3) ─┼→ reduce
+                 │                   │
+                 └→ summarize(docN) ─┘
+```
+
+This is one of the most important advanced parallel patterns in LangGraph.
+
+---
+
+# 32. Parallelism and Errors
+
+Parallel workflows introduce another important issue:
+
+> What happens if one branch fails?
+
+Suppose:
+
+```text
+        ┌→ API A ✓
+        │
+START ──┼→ API B ✗
+        │
+        └→ API C ✓
+```
+
+You need to decide what the workflow should do.
+
+Possible strategies:
+
+### Strategy 1 — Fail the whole workflow
+
+```text
+A ✓
+B ✗ → STOP
+C ✓
+```
+
+Useful when every result is mandatory.
+
+---
+
+### Strategy 2 — Continue with partial results
+
+```text
+A ✓
+B ✗
+C ✓
+ ↓
+Combine A + C
+```
+
+Useful when some sources are optional.
+
+---
+
+### Strategy 3 — Retry failed branch
+
+```text
+B
+↓
+FAIL
+↓
+RETRY
+↓
+SUCCESS
+```
+
+Useful for unreliable APIs.
+
+---
+
+### Strategy 4 — Fallback
+
+```text
+Primary API
+     ↓
+   failed
+     ↓
+Fallback API
+```
+
+---
+
+# 33. Parallelism and Retries
+
+For example:
+
+```text
+             ┌→ Search API
+             │
+Query ───────┼→ Database
+             │
+             └→ Internal API
+```
+
+If `Search API` fails:
+
+```text
+Search API
+    ↓
+ Retry
+    ↓
+ Retry
+    ↓
+Fallback
+```
+
+while the other branches can continue independently.
+
+This is one reason graph-based orchestration is valuable compared with writing one giant agent loop.
+
+---
+
+# 34. Parallelism vs Async Programming
+
+An important distinction:
+
+### LangGraph parallelism
+
+Defines **workflow-level concurrency**:
+
+```text
+A ─┐
+B ─┼→ C
+D ─┘
+```
+
+### Python async
+
+Defines how individual operations can execute concurrently:
+
+```python
+async def task():
+    ...
+```
+
+They are related, but not the same concept.
+
+LangGraph describes:
+
+> **Which work is independent?**
+
+The runtime handles execution according to its graph semantics and execution model.
+
+---
+
+# 35. Parallelism Doesn't Always Make Things Faster
+
+Suppose your three operations all use a resource with a strict limit:
+
+```text
+API rate limit = 1 request/second
+```
+
+Running:
+
+```text
+A
+B
+C
+```
+
+simultaneously might cause:
+
+```text
+429 Too Many Requests
+```
+
+So parallelism should be used when:
+
+* operations are independent
+* resources allow concurrency
+* API limits permit it
+* downstream systems can handle the load
+
+---
+
+# 36. Parallel LLM Calls and Cost
+
+Parallelism doesn't magically reduce token usage.
+
+Suppose:
+
+```text
+LLM A = 1000 tokens
+LLM B = 1000 tokens
+LLM C = 1000 tokens
+```
+
+Total:
+
+```text
+3000 tokens
+```
+
+whether they execute:
+
+```text
+sequentially
+```
+
+or:
+
+```text
+parallel
+```
+
+The main benefit is usually **latency**, not token cost.
+
+---
+
+# 37. Parallelism in Agent Architecture
+
+A sophisticated agent might look like:
+
+```text
+                         ┌→ Research Agent ───┐
+                         │                    │
+User → Planner ──────────┼→ Coding Agent ─────┼→ Reviewer
+                         │                    │
+                         └→ Data Agent ───────┘
+```
+
+This is a multi-agent parallel architecture.
+
+For example:
+
+### Research agent
+
+Finds information.
+
+### Coding agent
+
+Writes implementation.
+
+### Data agent
+
+Analyzes data.
+
+### Reviewer
+
+Receives all three results and evaluates them.
+
+This can be represented as:
+
+```text
+                    ┌──────── Research ────────┐
+                    │                          │
+Planner ────────────┼──────── Coding ──────────┼──→ Reviewer
+                    │                          │
+                    └──────── Data ────────────┘
+```
+
+---
+
+# 38. Parallel vs Multi-Agent
+
+These are not the same thing.
+
+Parallelism is an **execution pattern**.
+
+Multi-agent is an **architecture pattern**.
+
+You can have:
+
+```text
+one agent
+   ↓
+parallel tools
+```
+
+or:
+
+```text
+multiple agents
+   ↓
+parallel execution
+```
+
+For example:
+
+```text
+                 ┌→ Agent A
+Planner ─────────┼→ Agent B
+                 └→ Agent C
+```
+
+This is both:
+
+* multi-agent
+* parallel workflow
+
+---
+
+# 39. A Real-World Research Agent
+
+A good architecture could be:
+
+```text
+                      ┌→ Web Research ─────┐
+                      │                    │
+User → Planner ───────┼→ Academic Search ──┼→ Evidence Aggregator
+                      │                    │
+                      ├→ Internal Docs ────┤
+                      │                    │
+                      └→ GitHub Search ────┘
+                                             ↓
+                                          Reranker
+                                             ↓
+                                           Writer
+                                             ↓
+                                          Reviewer
+```
+
+Notice the stages:
+
+```text
+Planner
+   ↓
+Fan-out
+   ↓
+Parallel research
+   ↓
+Fan-in
+   ↓
+Reranking
+   ↓
+Generation
+   ↓
+Review
+```
+
+This is a very realistic LangGraph architecture.
+
+---
+
+# 40. Parallel Workflow with Human-in-the-Loop
+
+You can even introduce human approval after parallel work:
+
+```text
+                 ┌→ Research A ──┐
+                 │               │
+                 ├→ Research B ──┤
+START → Planner ─┼→ Research C ──┼→ Human Review
+                 │               │
+                 └→ Research D ──┘
+                                      ↓
+                                  Generate
+```
+
+The human doesn't need to review every individual branch.
+
+Instead, the workflow aggregates the results first.
+
+---
+
+# 41. Parallel Workflow with Checkpointing
+
+LangGraph's persistence/checkpointing capabilities become useful in long-running workflows.
+
+Imagine:
+
+```text
+              ┌→ Research A
+              │
+Planner ──────┼→ Research B
+              │
+              └→ Research C
+                     ↓
+                 Synthesis
+```
+
+If something goes wrong after the research stage, you don't necessarily want to redo all research.
+
+A persistent workflow can preserve state/checkpoints and allow the workflow to resume.
+
+This becomes especially important for:
+
+* expensive LLM calls
+* long-running agents
+* human approval
+* external APIs
+* production workflows
+
+---
+
+# 42. Parallel Workflow Design Rules
+
+When designing parallel workflows, ask these questions.
+
+### Question 1
+
+Can these tasks execute independently?
+
+If:
+
+```text
+B needs A
+```
+
+then they cannot be truly parallel.
+
+---
+
+### Question 2
+
+Do they write to the same state key?
+
+If:
+
+```text
+A → result
+B → result
+C → result
+```
+
+you need an appropriate reducer or a different state design.
+
+---
+
+### Question 3
+
+Does the downstream node need all results?
+
+If yes:
+
+```text
+A ─┐
+B ─┼→ Combine
+C ─┘
+```
+
+If not, you might not need fan-in at that point.
+
+---
+
+### Question 4
+
+What happens when one branch fails?
+
+Define:
+
+```text
+retry
+fallback
+partial result
+failure
+```
+
+---
+
+### Question 5
+
+Is concurrency actually beneficial?
+
+Consider:
+
+```text
+API limits
+database limits
+LLM provider limits
+CPU
+memory
+network
+cost
+```
+
+---
+
+# 43. Common Mistakes
+
+## Mistake 1 — Parallelizing dependent tasks
+
+Bad:
+
+```text
+Retrieve
+Analyze
+```
+
+and treating them as independent.
+
+Analysis requires retrieval.
+
+Correct:
+
+```text
+Retrieve → Analyze
+```
+
+---
+
+## Mistake 2 — Shared state collisions
+
+Bad:
+
+```python
+return {"result": ...}
+```
+
+from multiple branches without a reducer.
+
+Better:
+
+```python
+return {"technical": ...}
+```
+
+```python
+return {"business": ...}
+```
+
+or use a reducer:
+
+```python
+results: Annotated[list, operator.add]
+```
+
+---
+
+## Mistake 3 — Assuming parallelism means unlimited concurrency
+
+It doesn't.
+
+External services can have:
+
+```text
+rate limits
+connection limits
+quota
+resource constraints
+```
+
+---
+
+## Mistake 4 — Making everything parallel
+
+You should not turn:
+
+```text
+A → B → C
+```
+
+into parallel execution just because parallelism exists.
+
+Parallelism should represent **actual independence**.
+
+---
+
+# 44. Sequential + Parallel Hybrid
+
+Most real workflows are not purely sequential or purely parallel.
+
+They are hybrid.
+
+For example:
+
+```text
+                 ┌→ Web Search ────────┐
+                 │                     │
+Query → Analyze ─┼→ Vector Search ─────┼→ Rerank
+                 │                     │
+                 └→ Database Search ───┘
+                                         ↓
+                                      Generate
+                                         ↓
+                                      Review
+                                         ↓
+                                        END
+```
+
+This is probably the most important architecture to understand.
+
+Real-world LangGraph workflows frequently look like:
+
+```text
+Sequential
+    ↓
+Parallel
+    ↓
+Sequential
+    ↓
+Parallel
+    ↓
+Sequential
+```
+
+---
+
+# 45. Mental Model
+
+The easiest way to remember LangGraph parallelism is:
+
+```text
+             DEPENDENCY GRAPH
+                    │
+                    ↓
+          ┌─────────┴─────────┐
+          │                   │
+       Independent         Independent
+          │                   │
+          ↓                   ↓
+       Parallel             Parallel
+          │                   │
+          └─────────┬─────────┘
+                    ↓
+                  Merge
+```
+
+Or simply:
+
+> **If two nodes don't need each other's outputs, they are candidates for parallel execution.**
+
+---
+
+# 46. The Three Patterns You Should Master
+
+For LangGraph, I'd recommend mastering these three patterns in order:
+
+### 1. Basic fan-out/fan-in
+
+```text
+       ┌→ A ─┐
+START ─┼→ B ─┼→ D
+       └→ C ─┘
+```
+
+Learn:
+
+* multiple outgoing edges
+* multiple incoming edges
+* state updates
+
+---
+
+### 2. Reducers
+
+```text
+A ─┐
+B ─┼→ results[]
+C ─┘
+```
+
+Learn:
+
+```python
+Annotated[list, operator.add]
+```
+
+This is essential for accumulating results from parallel workers.
+
+---
+
+### 3. Dynamic fan-out with `Send`
+
+```text
+                ┌→ Worker 1
+                ├→ Worker 2
+Router ─────────┼→ Worker 3
+                ├→ Worker 4
+                └→ Worker N
+```
+
+Learn:
+
+```python
+Send(...)
+```
+
+This is the pattern you need when the number of parallel tasks is determined dynamically.
+
+---
+
+# 47. Putting Everything Together
+
+A production-style architecture could look like:
+
+```text
+                         ┌→ Web Search ────────┐
+                         │                     │
+                         ├→ Vector Search ─────┤
+                         │                     │
+User → Planner → Fan-Out ┼→ Database Search ───┼→ Reducer
+                         │                     │
+                         └→ Document Search ───┘
+                                                   ↓
+                                                Reranker
+                                                   ↓
+                                               Synthesizer
+                                                   ↓
+                                                Reviewer
+                                                   ↓
+                                                  END
+```
+
+And if the number of documents is dynamic:
+
+```text
+                         ┌→ Process Doc 1 ─┐
+                         ├→ Process Doc 2 ─┤
+Planner → Send ──────────┼→ Process Doc 3 ─┼→ Reducer
+                         ├→ Process Doc 4 ─┤
+                         └→ Process Doc N ─┘
+```
+
+That gives you the core architecture behind many sophisticated LangGraph systems.
+
+---
+
+# 48. What to Learn Next
+
+Since you're working through the modern LangChain/LangGraph ecosystem, I'd learn parallel workflows in this order:
+
+```text
+LangGraph State
+      ↓
+Nodes
+      ↓
+Edges
+      ↓
+Conditional Edges
+      ↓
+Fan-out / Fan-in
+      ↓
+Reducers
+      ↓
+Dynamic Fan-out
+      ↓
+Send
+      ↓
+Map-Reduce
+      ↓
+Subgraphs
+      ↓
+Persistence / Checkpointing
+      ↓
+Human-in-the-loop
+      ↓
+Multi-Agent Workflows
+      ↓
+Production Agent Architecture
+```
+
+The **most important transition** is:
+
+```text
+Static parallelism
+      ↓
+Reducers
+      ↓
+Dynamic parallelism with Send
+      ↓
+Map-Reduce
+```
+
+Once you understand those four concepts, parallel workflows in LangGraph become much easier to reason about.
