@@ -704,3 +704,396 @@ Therefore, most parallel LangGraph workflows look like:
 This pattern is extremely important in agentic workflows.
 
 ---
+
+# 17. Parallel vs Sequential Workflows
+
+## Sequential
+
+```text
+START
+  ↓
+A
+  ↓
+B
+  ↓
+C
+  ↓
+D
+```
+
+Use this when:
+
+```text
+B depends on A
+C depends on B
+D depends on C
+```
+
+For example:
+
+```text
+Retrieve document
+       ↓
+Extract information
+       ↓
+Analyze information
+       ↓
+Generate answer
+```
+
+You cannot meaningfully execute these simultaneously.
+
+---
+
+## Parallel
+
+```text
+             ┌→ A ─┐
+             │     │
+START ───────┼→ B ─┼→ D
+             │     │
+             └→ C ─┘
+```
+
+Use this when:
+
+```text
+A does not depend on B
+B does not depend on C
+C does not depend on A
+```
+
+---
+
+# 18. Conditional Parallel Workflows
+
+Parallelism becomes even more powerful when combined with conditional routing.
+
+For example:
+
+```text
+                 ┌──→ Technical
+                 │
+START → Router ──┼──→ Business
+                 │
+                 └──→ Legal
+```
+
+But perhaps the router determines which branches are necessary.
+
+For example:
+
+```text
+User Query
+    ↓
+Classifier
+    ↓
+ ┌──┴───────────────┐
+ ↓                  ↓
+Technical         Business
+ ↓                  ↓
+ └────────┬─────────┘
+          ↓
+       Synthesis
+```
+
+This lets you build **dynamic workflows**.
+
+---
+
+# 19. Parallel Tool Calls
+
+Another common use case is tool calling.
+
+Suppose the agent needs:
+
+```text
+Weather
+Stock price
+Currency conversion
+```
+
+These are independent.
+
+Instead of:
+
+```text
+Weather
+  ↓
+Stock
+  ↓
+Currency
+```
+
+you can have:
+
+```text
+               ┌→ Weather API ───┐
+               │                 │
+User Request ──┼→ Stock API ─────┼→ Final Answer
+               │                 │
+               └→ Currency API ──┘
+```
+
+This is particularly useful for agent systems.
+
+---
+
+# 20. Parallel Document Processing
+
+Suppose you upload:
+
+```text
+document1.pdf
+document2.pdf
+document3.pdf
+document4.pdf
+```
+
+You can process them independently:
+
+```text
+                 ┌→ Process PDF 1 ──┐
+                 │                  │
+                 ├→ Process PDF 2 ──┤
+Input Documents ─┼→ Process PDF 3 ──┼→ Combine
+                 │                  │
+                 └→ Process PDF 4 ──┘
+```
+
+Each branch might:
+
+```text
+Load
+ ↓
+Extract
+ ↓
+Summarize
+```
+
+and then the summaries are combined.
+
+---
+
+# 21. Parallel RAG
+
+Parallelism is especially useful for **multi-source RAG**.
+
+Suppose the user asks:
+
+```text
+"What are the security risks of LangGraph?"
+```
+
+You might search:
+
+```text
+Vector DB
+Web
+Documentation
+GitHub
+Internal Knowledge Base
+```
+
+Graph:
+
+```text
+                       ┌→ Vector DB ──────┐
+                       │                  │
+                       ├→ Web Search ─────┤
+                       │                  │
+Query → Query Analysis ┼→ Documentation ──┼→ Rank/Combine
+                       │                  │
+                       ├→ GitHub ─────────┤
+                       │                  │
+                       └→ Internal DB ────┘
+```
+
+This is often better than relying on a single retrieval source.
+
+---
+
+# 22. Parallel RAG Architecture
+
+A more realistic architecture might be:
+
+```text
+                         ┌→ Semantic Search ──┐
+                         │                    │
+                         ├→ Keyword Search ───┤
+User Query → Rewrite ────┤                    ├→ Reranker → LLM
+                         ├→ Web Search ───────┤
+                         │                    │
+                         └→ Metadata Search ──┘
+```
+
+This is a very useful production pattern.
+
+---
+
+# 23. Parallel Map Processing
+
+Another important pattern is **map-reduce**.
+
+Suppose you have 100 documents.
+
+You want to summarize each one.
+
+Instead of:
+
+```text
+Document 1 → Summary
+Document 2 → Summary
+Document 3 → Summary
+...
+Document 100 → Summary
+```
+
+you conceptually perform:
+
+```text
+                 ┌→ Summary 1 ──┐
+                 ├→ Summary 2 ──┤
+Documents ───────┼→ Summary 3 ──┼→ Reduce → Final Summary
+                 ├→ ... ────────┤
+                 └→ Summary 100 ┘
+```
+
+This is:
+
+```text
+MAP
+ ↓
+Parallel processing
+ ↓
+REDUCE
+```
+
+LangGraph provides patterns for dynamically creating work items, which is particularly useful when the number of parallel tasks isn't known ahead of time.
+
+---
+
+# 24. Static vs Dynamic Parallelism
+
+There are two major forms you should distinguish.
+
+## Static parallelism
+
+You know the branches when constructing the graph.
+
+```text
+START
+ ├──→ A
+ ├──→ B
+ └──→ C
+```
+
+Example:
+
+```python
+builder.add_edge(START, "technical")
+builder.add_edge(START, "business")
+builder.add_edge(START, "market")
+```
+
+---
+
+## Dynamic parallelism
+
+The number of tasks is determined during execution.
+
+For example:
+
+```text
+Input
+ ↓
+Find 50 documents
+ ↓
+Create 50 processing tasks
+ ↓
+Process them
+ ↓
+Combine results
+```
+
+You don't want to manually create:
+
+```text
+document_1
+document_2
+...
+document_50
+```
+
+Instead, the workflow dynamically creates work.
+
+This is where LangGraph's **map-reduce / Send-based patterns** become important.
+
+---
+
+# 25. Dynamic Parallelism with `Send`
+
+One of the most important LangGraph concepts for dynamic fan-out is `Send`.
+
+Conceptually:
+
+```text
+                 ┌→ Process document 1
+                 │
+Input → Router ──┼→ Process document 2
+                 │
+                 ├→ Process document 3
+                 │
+                 └→ Process document N
+```
+
+The router can dynamically generate tasks.
+
+A simplified example:
+
+```python
+from langgraph.constants import Send
+```
+
+Suppose:
+
+```python
+class State(TypedDict):
+    documents: list[str]
+```
+
+The router can create work:
+
+```python
+def fan_out(state: State):
+
+    return [
+        Send(
+            "process_document",
+            {"document": document}
+        )
+        for document in state["documents"]
+    ]
+```
+
+So if:
+
+```python
+state["documents"] = [
+    "doc1",
+    "doc2",
+    "doc3"
+]
+```
+
+the router effectively produces:
+
+```text
+Send(process_document, doc1)
+Send(process_document, doc2)
+Send(process_document, doc3)
+```
+
+These become parallel work items.
+
+---
