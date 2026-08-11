@@ -1104,3 +1104,930 @@ decides whether to finish or improve.
 This is where LangGraph starts becoming powerful for agentic systems.
 
 ---
+
+# 20. Conditional Workflow With Pydantic + Structured LLM
+
+A production-style pattern could be:
+
+```python
+from typing import Literal
+from pydantic import BaseModel, Field
+
+
+class Classification(BaseModel):
+    category: Literal[
+        "billing",
+        "technical",
+        "general"
+    ]
+
+
+class State(BaseModel):
+    question: str
+    category: str | None = None
+    response: str | None = None
+```
+
+Structured classifier:
+
+```python
+classifier = llm.with_structured_output(Classification)
+```
+
+Node:
+
+```python
+def classify(state: State):
+
+    result = classifier.invoke(
+        f"""
+        Classify this question:
+
+        {state.question}
+
+        Choose one:
+        billing
+        technical
+        general
+        """
+    )
+
+    return {
+        "category": result.category
+    }
+```
+
+Routing:
+
+```python
+def route(state: State):
+
+    return state.category
+```
+
+Graph:
+
+```python
+builder.add_conditional_edges(
+    "classify",
+    route,
+    {
+        "billing": "billing",
+        "technical": "technical",
+        "general": "general"
+    }
+)
+```
+
+The advantage of using:
+
+```python
+Literal["billing", "technical", "general"]
+```
+
+is that the possible categories are explicitly constrained.
+
+---
+
+# 21. `Literal` for Routing
+
+You can also use typing to document the possible routing values:
+
+```python
+from typing import Literal
+
+
+def route(
+    state: State
+) -> Literal["billing", "technical", "general"]:
+
+    return state.category
+```
+
+This makes your code easier to understand and gives static type checkers useful information.
+
+---
+
+# 22. Conditional Workflow vs `if/else`
+
+You might ask:
+
+> Why not just use Python `if/else`?
+
+You absolutely can use `if/else` **inside a node**, but LangGraph conditional edges provide a cleaner graph-level architecture.
+
+For example:
+
+```python
+def process(state):
+
+    if state["category"] == "billing":
+        # billing logic
+
+    else:
+        # general logic
+```
+
+This puts everything inside one node.
+
+Instead:
+
+```text
+classify
+   ↓
+conditional edge
+ ┌─┴────┐
+ ↓      ↓
+billing general
+```
+
+Each responsibility becomes a separate node.
+
+This gives you:
+
+* clearer architecture
+* easier debugging
+* visualization
+* independent testing
+* better observability
+* easier modification
+* reusable nodes
+
+---
+
+# 23. Bad Design
+
+Avoid huge nodes like:
+
+```python
+def everything(state):
+
+    if condition1:
+        ...
+    elif condition2:
+        ...
+    elif condition3:
+        ...
+    elif condition4:
+        ...
+    elif condition5:
+        ...
+```
+
+This becomes difficult to maintain.
+
+Instead:
+
+```text
+             ┌→ node_1
+             │
+classifier → ├→ node_2
+             │
+             ├→ node_3
+             │
+             └→ node_4
+```
+
+Each node has one responsibility.
+
+---
+
+# 24. Conditional Routing With Validation
+
+Another common pattern:
+
+```text
+START
+ ↓
+Validate
+ ↓
+ ┌─────────────┐
+ ↓             ↓
+Valid        Invalid
+ ↓             ↓
+Process       Fix
+ ↓             │
+END            └──→ Validate
+```
+
+Routing:
+
+```python
+def route_validation(state):
+
+    if state["valid"]:
+        return "process"
+
+    return "fix"
+```
+
+Then:
+
+```python
+builder.add_conditional_edges(
+    "validate",
+    route_validation,
+    {
+        "process": "process",
+        "fix": "fix"
+    }
+)
+```
+
+This gives you a retry loop.
+
+---
+
+# 25. Conditional Routing With Human-in-the-Loop
+
+You can also build:
+
+```text
+Generate
+   ↓
+Check
+   ↓
+ ┌───────────────┐
+ ↓               ↓
+Low risk       High risk
+ ↓               ↓
+END          Human Review
+                  ↓
+             ┌────┴────┐
+             ↓         ↓
+           Reject    Approve
+             ↓         ↓
+            END       END
+```
+
+The routing decision can depend on:
+
+```python
+state["risk_score"]
+```
+
+For example:
+
+```python
+def route_risk(state):
+
+    if state["risk_score"] > 0.8:
+        return "human_review"
+
+    return "continue"
+```
+
+---
+
+# 26. Conditional Routing With Multiple Branches
+
+You aren't limited to two paths.
+
+For example:
+
+```text
+             ┌→ easy
+             │
+             ├→ medium
+START → route├→ hard
+             │
+             ├→ expert
+             │
+             └→ reject
+```
+
+Code:
+
+```python
+builder.add_conditional_edges(
+    "classify",
+    route,
+    {
+        "easy": "easy_handler",
+        "medium": "medium_handler",
+        "hard": "hard_handler",
+        "expert": "expert_handler",
+        "reject": END
+    }
+)
+```
+
+---
+
+# 27. Conditional Routing to the Same Node
+
+Multiple decisions can converge.
+
+```text
+             ┌→ billing ──┐
+             │             │
+classify ────┼→ technical ─┼→ response
+             │             │
+             └→ general ──┘
+```
+
+Code:
+
+```python
+builder.add_conditional_edges(
+    "classify",
+    route,
+    {
+        "billing": "billing",
+        "technical": "technical",
+        "general": "general"
+    }
+)
+
+builder.add_edge("billing", "response")
+builder.add_edge("technical", "response")
+builder.add_edge("general", "response")
+```
+
+This pattern is called **branching and convergence**.
+
+---
+
+# 28. Conditional Workflow With Parallelism
+
+Conditional routing can also be combined with parallel workflows.
+
+For example:
+
+```text
+             ┌→ Search Web ─────┐
+             │                  │
+Question → Router               ├→ Synthesize
+             │                  │
+             └→ Search DB ──────┘
+```
+
+The router determines whether certain branches should execute.
+
+This becomes especially powerful when combined with LangGraph's parallel execution and reducers.
+
+---
+
+# 29. Conditional Workflow Execution Flow
+
+When invoking:
+
+```python
+graph.invoke({
+    "question": "Why was I charged twice?"
+})
+```
+
+LangGraph conceptually performs:
+
+### Step 1
+
+Initialize state:
+
+```text
+question = "Why was I charged twice?"
+```
+
+### Step 2
+
+Execute:
+
+```text
+classify
+```
+
+State becomes:
+
+```text
+category = billing
+```
+
+### Step 3
+
+Execute routing function:
+
+```python
+route_question(state)
+```
+
+returns:
+
+```text
+billing
+```
+
+### Step 4
+
+Routing map resolves:
+
+```text
+billing → billing node
+```
+
+### Step 5
+
+Execute:
+
+```text
+billing
+```
+
+### Step 6
+
+Execute:
+
+```text
+END
+```
+
+---
+
+# 30. Important Difference: State Update vs Routing Result
+
+This is one of the most important things to understand.
+
+Suppose:
+
+```python
+def classify(state):
+
+    return {
+        "category": "billing"
+    }
+```
+
+This updates state.
+
+The routing function:
+
+```python
+def route(state):
+
+    return state["category"]
+```
+
+returns a routing key.
+
+So:
+
+```text
+classify
+   │
+   │ state update
+   ↓
+category = billing
+   │
+   ↓
+route()
+   │
+   │ routing result
+   ↓
+"billing"
+   │
+   ↓
+billing node
+```
+
+Don't confuse:
+
+```python
+return {"category": "billing"}
+```
+
+with:
+
+```python
+return "billing"
+```
+
+They have different purposes.
+
+---
+
+# 31. A More Complete Example
+
+Here's a practical workflow combining several concepts.
+
+```python
+from typing import TypedDict, Literal
+
+from langgraph.graph import StateGraph, START, END
+
+
+class State(TypedDict):
+    question: str
+    category: str
+    answer: str
+
+
+def classify(state: State):
+
+    question = state["question"].lower()
+
+    if "price" in question or "payment" in question:
+        return {"category": "billing"}
+
+    if "error" in question or "bug" in question:
+        return {"category": "technical"}
+
+    return {"category": "general"}
+
+
+def route(
+    state: State
+) -> Literal["billing", "technical", "general"]:
+
+    return state["category"]
+
+
+def billing(state: State):
+
+    return {
+        "answer": "This is a billing-related question."
+    }
+
+
+def technical(state: State):
+
+    return {
+        "answer": "This is a technical question."
+    }
+
+
+def general(state: State):
+
+    return {
+        "answer": "This is a general question."
+    }
+
+
+builder = StateGraph(State)
+
+builder.add_node("classify", classify)
+builder.add_node("billing", billing)
+builder.add_node("technical", technical)
+builder.add_node("general", general)
+
+builder.add_edge(START, "classify")
+
+builder.add_conditional_edges(
+    "classify",
+    route,
+    {
+        "billing": "billing",
+        "technical": "technical",
+        "general": "general",
+    }
+)
+
+builder.add_edge("billing", END)
+builder.add_edge("technical", END)
+builder.add_edge("general", END)
+
+graph = builder.compile()
+```
+
+Then:
+
+```python
+result = graph.invoke({
+    "question": "Why was I charged twice?",
+    "category": "",
+    "answer": ""
+})
+
+print(result)
+```
+
+Result conceptually:
+
+```python
+{
+    "question": "Why was I charged twice?",
+    "category": "billing",
+    "answer": "This is a billing-related question."
+}
+```
+
+---
+
+# 32. Visualizing the Graph
+
+One of the benefits of LangGraph is that you can visualize the workflow.
+
+Conceptually, our graph is:
+
+```text
+               ┌───────────→ billing ───────→ END
+               │
+START → classify ──────────→ technical ─────→ END
+               │
+               └───────────→ general ───────→ END
+```
+
+For complex agent systems, this visualization becomes extremely useful because you can see:
+
+* branches
+* loops
+* termination conditions
+* agent/tool cycles
+* human approval paths
+* retry paths
+
+---
+
+# 33. Common Conditional Workflow Patterns
+
+You should become comfortable with these patterns.
+
+### Pattern 1 — Simple branching
+
+```text
+A → B
+  → C
+```
+
+Used for:
+
+* classification
+* routing
+* intent detection
+
+---
+
+### Pattern 2 — Branch + convergence
+
+```text
+       → B →
+A →           D
+       → C →
+```
+
+Used for:
+
+* specialized processing
+* multiple handlers
+
+---
+
+### Pattern 3 — Conditional termination
+
+```text
+A → B
+  → END
+```
+
+Used for:
+
+* validation
+* guardrails
+* filtering
+
+---
+
+### Pattern 4 — Retry loop
+
+```text
+A → B
+↑   │
+└───┘
+```
+
+Used for:
+
+* validation
+* generation/evaluation
+* retry mechanisms
+
+---
+
+### Pattern 5 — Agent/tool loop
+
+```text
+Agent → Tools
+  ↑      │
+  └──────┘
+
+Agent → END
+```
+
+Used for:
+
+* AI agents
+* tool calling
+
+---
+
+### Pattern 6 — Human approval
+
+```text
+Generate
+   ↓
+Review
+   ↓
+ ┌─┴─┐
+ ↓   ↓
+Yes  No
+ ↓   ↓
+END Retry
+```
+
+Used for:
+
+* sensitive workflows
+* approval systems
+* content moderation
+
+---
+
+# 34. Conditional Workflows vs Linear Workflows
+
+| Feature                 | Linear  | Conditional |
+| ----------------------- | ------- | ----------- |
+| Fixed execution path    | ✅       | ❌           |
+| Dynamic routing         | ❌       | ✅           |
+| Branching               | ❌       | ✅           |
+| Loops                   | Limited | ✅           |
+| Early termination       | Limited | ✅           |
+| Agent workflows         | Limited | ✅           |
+| Human approval          | Limited | ✅           |
+| Retry logic             | Limited | ✅           |
+| Complex decision making | ❌       | ✅           |
+
+---
+
+# 35. Where Conditional Workflows Are Used
+
+You'll see them everywhere in serious agentic applications.
+
+### RAG
+
+```text
+Question
+ ↓
+Need retrieval?
+ ├── Yes → Retriever → LLM
+ └── No  → LLM
+```
+
+### Customer support
+
+```text
+Question
+ ↓
+Classifier
+ ├── Billing
+ ├── Technical
+ └── Account
+```
+
+### Coding agent
+
+```text
+Request
+ ↓
+Plan
+ ↓
+Need tool?
+ ├── Yes → Tool → Agent
+ └── No → Response
+```
+
+### Research agent
+
+```text
+Question
+ ↓
+Research required?
+ ├── Web search
+ ├── Database
+ └── Direct answer
+```
+
+### Content generation
+
+```text
+Generate
+ ↓
+Evaluate
+ ├── Good → END
+ └── Bad → Improve → Generate
+```
+
+---
+
+# 36. The Most Important LangGraph Pattern to Learn
+
+Given that you're learning **agentic AI with LangChain/LangGraph**, I'd recommend mastering this pattern first:
+
+```text
+                    ┌─────────────┐
+                    │             ↓
+START → Agent → Router → Tool → Agent
+          │
+          │
+          └────────────────────→ END
+```
+
+In code:
+
+```python
+builder.add_conditional_edges(
+    "agent",
+    should_continue,
+    {
+        "tools": "tools",
+        "end": END
+    }
+)
+```
+
+This simple pattern is the foundation for many modern tool-using agents.
+
+Then learn:
+
+```text
+Conditional branching
+        ↓
+Conditional loops
+        ↓
+Tool-calling loops
+        ↓
+Parallel + conditional workflows
+        ↓
+Human-in-the-loop
+        ↓
+Subgraphs
+        ↓
+Multi-agent workflows
+```
+
+---
+
+# 37. Key Takeaways
+
+The core concept can be reduced to:
+
+```python
+builder.add_conditional_edges(
+    "source_node",
+    routing_function,
+    {
+        "route_a": "node_a",
+        "route_b": "node_b",
+        "route_c": "node_c",
+    }
+)
+```
+
+Where:
+
+```text
+source_node
+     ↓
+routing_function(state)
+     ↓
+routing key
+     ↓
+routing map
+     ↓
+next node
+```
+
+For example:
+
+```python
+def route(state):
+    if state["score"] >= 8:
+        return "done"
+
+    return "retry"
+```
+
+and:
+
+```python
+builder.add_conditional_edges(
+    "evaluate",
+    route,
+    {
+        "done": END,
+        "retry": "generate"
+    }
+)
+```
+
+produces:
+
+```text
+             ┌───────────────┐
+             │               │
+             ↓               │
+          Generate → Evaluate
+                         │
+                    ┌────┴────┐
+                    ↓         ↓
+                   END      Generate
+```
+
+**That is the essence of conditional workflows in LangGraph: the graph structure is defined ahead of time, but the actual path through that graph is determined dynamically from the current state.**
