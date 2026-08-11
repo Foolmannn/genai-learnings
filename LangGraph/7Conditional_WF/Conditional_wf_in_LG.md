@@ -895,3 +895,212 @@ check_user ───────┼──→ billing
 
 ---
 
+# 15. Conditional Routing After Tool Calls
+
+This becomes particularly important when building agents.
+
+Imagine:
+
+```text
+User
+ ↓
+Agent
+ ↓
+ ┌──────────────┐
+ │              │
+Tool required?  No
+ │              │
+Yes             ↓
+ ↓             END
+Tool
+ ↓
+Agent
+```
+
+The decision can be:
+
+```python
+def route_after_agent(state):
+
+    last_message = state["messages"][-1]
+
+    if last_message.tool_calls:
+        return "tools"
+
+    return "end"
+```
+
+Then:
+
+```python
+builder.add_conditional_edges(
+    "agent",
+    route_after_agent,
+    {
+        "tools": "tools",
+        "end": END
+    }
+)
+```
+
+This is the foundation of many agentic workflows.
+
+---
+
+# 16. Tool-Calling Agent Pattern
+
+A common architecture is:
+
+```text
+                ┌─────────────┐
+                │             ↓
+START → Agent → Tools → Agent
+          │
+          ↓
+         END
+```
+
+The agent decides:
+
+```text
+Do I need a tool?
+```
+
+If yes:
+
+```text
+agent → tools
+```
+
+After tools execute:
+
+```text
+tools → agent
+```
+
+If no:
+
+```text
+agent → END
+```
+
+This is a **conditional loop**.
+
+---
+
+# 17. Conditional Edge vs Conditional Node
+
+These concepts are easy to confuse.
+
+### Conditional node
+
+A node performs some computation.
+
+```python
+def classify(state):
+    ...
+    return {"category": "billing"}
+```
+
+It modifies state.
+
+### Routing function
+
+A routing function decides where to go.
+
+```python
+def route(state):
+    return state["category"]
+```
+
+It determines the next node.
+
+Think:
+
+```text
+Node
+ ↓
+"What's the state now?"
+ ↓
+Routing function
+ ↓
+"Where should we go?"
+```
+
+---
+
+# 18. Important Mental Model
+
+You can think about LangGraph like this:
+
+### Nodes = Workers
+
+```text
+Node A = classifier
+Node B = researcher
+Node C = writer
+Node D = evaluator
+```
+
+### Edges = Roads
+
+```text
+A → B
+B → C
+```
+
+### Conditional edges = Traffic controller
+
+```text
+             → B
+            /
+A → traffic
+            \
+             → C
+```
+
+The traffic controller looks at the current state and chooses the appropriate road.
+
+---
+
+# 19. Conditional Workflow Architecture
+
+A realistic AI system could look like:
+
+```text
+                         ┌→ RAG → Generate
+                         │
+START → Classify → Route ├→ Web Search → Generate
+                         │
+                         └→ Direct Answer
+                                      ↓
+                                   Evaluate
+                                      ↓
+                              ┌───────┴───────┐
+                              ↓               ↓
+                           Improve           END
+                              │
+                              └→ Generate
+```
+
+Here you have **two different types of conditional routing**:
+
+### Routing decision #1
+
+```text
+Classify → Route
+```
+
+chooses the research strategy.
+
+### Routing decision #2
+
+```text
+Evaluate → Route
+```
+
+decides whether to finish or improve.
+
+This is where LangGraph starts becoming powerful for agentic systems.
+
+---
