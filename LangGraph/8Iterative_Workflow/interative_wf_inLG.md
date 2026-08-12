@@ -1011,3 +1011,546 @@ def should_continue(state):
 ```
 
 ---
+
+# 25. Avoiding useless iterations
+
+There's another important issue.
+
+Suppose:
+
+```text
+Iteration 1 → score 6
+Iteration 2 → score 6
+Iteration 3 → score 6
+Iteration 4 → score 6
+```
+
+The model isn't improving.
+
+We can detect this.
+
+Add:
+
+```python
+previous_score: int
+```
+
+to state.
+
+Then:
+
+```python
+def should_continue(state):
+
+    if state["score"] >= 8:
+        return "finish"
+
+    if state["iteration"] >= 5:
+        return "finish"
+
+    if state["score"] <= state["previous_score"]:
+        return "finish"
+
+    return "improve"
+```
+
+However, you'd want to carefully initialize and update `previous_score`; otherwise the first iteration can be misleading.
+
+A better production design could track:
+
+```python
+score_history: list[int]
+```
+
+For example:
+
+```python
+[6, 7, 7, 7]
+```
+
+Then stop when improvement stalls.
+
+---
+
+# 26. Score history
+
+State:
+
+```python
+class BlogState(TypedDict):
+    topic: str
+    draft: str
+    feedback: str
+    score: int
+    score_history: list[int]
+    iteration: int
+```
+
+Evaluation:
+
+```python
+def evaluate(state):
+
+    result = evaluator.invoke(...)
+
+    history = state["score_history"] + [result.score]
+
+    return {
+        "score": result.score,
+        "feedback": result.feedback,
+        "score_history": history
+    }
+```
+
+Then you can inspect:
+
+```python
+[5, 6, 7, 8]
+```
+
+This is useful for debugging and observability.
+
+---
+
+# 27. Iterative workflow with structured output
+
+For production applications, I strongly recommend structured output for evaluators.
+
+Instead of:
+
+```text
+Score: 8
+Feedback: Improve examples
+```
+
+use:
+
+```python
+class Evaluation(BaseModel):
+    score: int
+    feedback: str
+```
+
+Then:
+
+```python
+evaluator = model.with_structured_output(Evaluation)
+```
+
+This gives you predictable data:
+
+```python
+result.score
+result.feedback
+```
+
+instead of manually parsing LLM text.
+
+---
+
+# 28. Pydantic state
+
+Since you've been working with Pydantic models in your LangGraph workflows, you can also model your state with a Pydantic schema where appropriate.
+
+For example:
+
+```python
+from pydantic import BaseModel, Field
+
+
+class BlogState(BaseModel):
+    topic: str
+    draft: str = ""
+    feedback: str = ""
+    score: int = 0
+    iteration: int = 0
+```
+
+Then your nodes can work around that structured state representation.
+
+However, when working with LangGraph, pay attention to the specific state schema/update semantics of the LangGraph version you're using. In many examples, `TypedDict` remains the simplest choice for graph state, while Pydantic is particularly useful for **LLM structured outputs**.
+
+---
+
+# 29. A more production-like architecture
+
+A robust iterative workflow might look like:
+
+```text
+                    ┌──────────────┐
+                    │    START     │
+                    └──────┬───────┘
+                           ↓
+                    ┌──────────────┐
+                    │   Generate   │
+                    └──────┬───────┘
+                           ↓
+                    ┌──────────────┐
+                    │   Validate   │
+                    └──────┬───────┘
+                           ↓
+                    ┌──────────────┐
+                    │   Evaluate   │
+                    └──────┬───────┘
+                           ↓
+                ┌─────────────────────┐
+                │ Quality acceptable? │
+                └──────────┬──────────┘
+                     Yes /     \ No
+                       /         \
+                      ↓           ↓
+                   Finish      Improve
+                                  │
+                                  ↓
+                              Validate
+                                  │
+                                  ↓
+                              Evaluate
+                                  │
+                                  └────────┐
+                                           │
+                                           ↓
+                                      Quality check
+```
+
+Notice the additional **validation** stage.
+
+That's often preferable to blindly asking the LLM to improve itself.
+
+---
+
+# 30. Real-world applications
+
+Iterative workflows are useful in many applications.
+
+### 1. Content generation
+
+```text
+Generate
+ ↓
+Critique
+ ↓
+Improve
+ ↓
+Final
+```
+
+### 2. Code generation
+
+```text
+Generate code
+ ↓
+Run tests
+ ↓
+Tests pass?
+ ↓
+No → Fix code
+ ↓
+Run tests again
+```
+
+This is particularly powerful.
+
+```text
+             ┌──────────────┐
+             ↓              │
+Generate → Test → Failed → Fix
+             │
+             └── Passed → END
+```
+
+---
+
+### 3. SQL generation
+
+```text
+Generate SQL
+    ↓
+Execute SQL
+    ↓
+Error?
+  /    \
+Yes     No
+ ↓       ↓
+Fix    Return
+ ↓
+Execute again
+```
+
+---
+
+### 4. RAG
+
+A RAG system can iteratively retrieve information:
+
+```text
+Question
+ ↓
+Retrieve
+ ↓
+Evaluate retrieved documents
+ ↓
+Enough?
+ ├── Yes → Generate answer
+ └── No → Rewrite query
+             ↓
+          Retrieve again
+```
+
+This is often called **iterative retrieval** or query refinement.
+
+---
+
+### 5. Research agent
+
+```text
+Question
+ ↓
+Search
+ ↓
+Analyze
+ ↓
+Missing information?
+ ├── Yes → Search again
+ └── No → Synthesize
+```
+
+---
+
+### 6. Data extraction
+
+```text
+Extract
+ ↓
+Validate
+ ↓
+Invalid?
+ ↓
+Re-extract
+ ↓
+Validate
+ ↓
+Valid → END
+```
+
+---
+
+# 31. Iterative workflow vs recursion
+
+They can look similar, but conceptually:
+
+### Recursion
+
+A function calls itself:
+
+```python
+def process():
+    ...
+    process()
+```
+
+### Workflow iteration
+
+A graph transitions back to a previous node:
+
+```text
+A → B → C
+    ↑   |
+    └───┘
+```
+
+LangGraph is designed around graph transitions rather than requiring you to manually implement recursion.
+
+This makes workflow state, routing, persistence, visualization, and debugging much easier to manage.
+
+---
+
+# 32. Common pattern: Generate → Critique → Refine
+
+This is one of the most useful iterative patterns.
+
+```text
+           ┌─────────────┐
+           │   Generate  │
+           └──────┬──────┘
+                  ↓
+           ┌─────────────┐
+           │   Critique  │
+           └──────┬──────┘
+                  ↓
+           ┌─────────────┐
+           │   Refine    │
+           └──────┬──────┘
+                  │
+                  └─────────────→ Critique
+```
+
+For example:
+
+```text
+Generate answer
+     ↓
+Critic LLM
+     ↓
+"Answer lacks examples"
+     ↓
+Generator LLM
+     ↓
+Improved answer
+     ↓
+Critic LLM
+     ↓
+"Good"
+     ↓
+END
+```
+
+---
+
+# 33. Generator and critic can be different models
+
+You don't necessarily need the same model.
+
+For example:
+
+```text
+Generator
+   ↓
+GPT model
+   ↓
+Critic
+   ↓
+Another model
+```
+
+You could use:
+
+```python
+generator = ChatOpenAI(
+    model="..."
+)
+
+critic = ChatOpenAI(
+    model="..."
+)
+```
+
+This can be useful because the critic has a different role.
+
+---
+
+# 34. Important problem: LLM self-evaluation isn't perfect
+
+A major limitation of:
+
+```text
+LLM generates
+     ↓
+same LLM evaluates
+     ↓
+same LLM improves
+```
+
+is that the model can reinforce its own mistakes.
+
+For example:
+
+```text
+Generate incorrect information
+        ↓
+LLM evaluates it
+        ↓
+"Looks good"
+        ↓
+Final answer still incorrect
+```
+
+Therefore, whenever possible, use **external validation**.
+
+For example:
+
+```text
+Generate code
+ ↓
+Run unit tests
+ ↓
+Result
+```
+
+or:
+
+```text
+Generate SQL
+ ↓
+Database executes SQL
+ ↓
+Actual error/result
+```
+
+or:
+
+```text
+Generate answer
+ ↓
+Retrieve authoritative documents
+ ↓
+Verify claims
+```
+
+This is usually stronger than pure self-reflection.
+
+---
+
+# 35. Three levels of iterative workflows
+
+You can think about iterative workflows at three levels.
+
+### Level 1 — Simple iteration
+
+```text
+A → B → A → B
+```
+
+Example:
+
+```text
+Process → Check → Process → Check
+```
+
+---
+
+### Level 2 — Reflection loop
+
+```text
+Generate
+ ↓
+Evaluate
+ ↓
+Improve
+ ↓
+Evaluate
+```
+
+---
+
+### Level 3 — Agentic loop
+
+```text
+           ┌─────────────┐
+           │     LLM     │
+           └──────┬──────┘
+                  ↓
+             Choose action
+                  ↓
+                Tool
+                  ↓
+               Result
+                  ↓
+                 LLM
+                  ↓
+                ...
+```
+
+The third level is much more dynamic.
+
+---
