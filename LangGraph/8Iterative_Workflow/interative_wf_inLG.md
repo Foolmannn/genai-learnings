@@ -1554,3 +1554,131 @@ Evaluate
 The third level is much more dynamic.
 
 ---
+
+# 36. Important design principles
+
+When designing iterative LangGraph workflows, remember these:
+
+### 1. Always define a stopping condition
+
+```python
+if score >= threshold:
+    return "finish"
+```
+
+### 2. Always consider a maximum iteration count
+
+```python
+if iteration >= MAX_ITERATIONS:
+    return "finish"
+```
+
+### 3. Keep state explicit
+
+```python
+class State(TypedDict):
+    ...
+```
+
+### 4. Prefer structured outputs
+
+Especially for:
+
+```text
+evaluation
+routing
+classification
+validation
+```
+
+### 5. Use external validation where possible
+
+Examples:
+
+```text
+Unit tests
+Database execution
+Search results
+Schemas
+APIs
+Calculations
+```
+
+### 6. Track iteration history
+
+Useful for:
+
+* debugging
+* monitoring
+* evaluation
+* cost analysis
+
+### 7. Avoid unnecessary LLM calls
+
+Every iteration can increase:
+
+* latency
+* token usage
+* API cost
+
+---
+
+# 37. The mental model to remember
+
+If you're learning LangGraph, remember iterative workflows like this:
+
+```text
+                 STATE
+                   │
+                   ↓
+              ┌─────────┐
+              │  NODE   │
+              └────┬────┘
+                   ↓
+              ┌─────────┐
+              │ CHECK   │
+              └────┬────┘
+                   ↓
+              ┌─────────────┐
+              │ Continue ?  │
+              └──┬───────┬──┘
+                Yes      No
+                 │        │
+                 ↓        ↓
+              Another    END
+              iteration
+                 │
+                 └──────────→ NODE
+```
+
+The three most important LangGraph concepts for iterative workflows are:
+
+```text
+STATE
+  +
+NODES
+  +
+CONDITIONAL EDGES
+  ↓
+ITERATIVE WORKFLOW
+```
+
+And the canonical pattern is:
+
+```text
+Generate
+   ↓
+Evaluate
+   ↓
+Conditional Edge
+   ├────────────→ END
+   │
+   └→ Improve
+         ↓
+      Evaluate
+         ↓
+      Conditional Edge
+         ...
+```
+
+For the kind of **LangChain/LangGraph agentic systems** you've been studying, this pattern is especially important because it forms the foundation for **reflection agents, evaluator-optimizer systems, iterative RAG, code-generation agents, research agents, and tool-using agents**.
