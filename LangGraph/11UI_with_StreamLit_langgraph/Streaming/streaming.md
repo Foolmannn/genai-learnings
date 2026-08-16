@@ -1371,3 +1371,243 @@ LangGraph
 ```
 
 ---
+
+# 30. Streaming and Human-in-the-Loop
+
+Streaming is also useful when humans interact with an agent.
+
+Example:
+
+```text
+Agent
+ ↓
+Research
+ ↓
+Generate proposed action
+ ↓
+⏸ Human approval
+ ↓
+Continue
+```
+
+The UI could receive:
+
+```text
+Agent is researching...
+Research completed.
+Agent wants to perform:
+"Send email to customer"
+
+Waiting for approval...
+```
+
+The human then approves.
+
+The graph resumes.
+
+This creates a powerful interactive agent architecture.
+
+---
+
+# 31. Streaming Modes Cheat Sheet
+
+| Mode       | Main purpose                         |
+| ---------- | ------------------------------------ |
+| `updates`  | Stream state updates                 |
+| `values`   | Stream complete state                |
+| `messages` | Stream LLM message/token chunks      |
+| `custom`   | Stream your own custom events        |
+| `debug`    | Detailed execution/debug information |
+
+A useful memory trick:
+
+```text
+updates → What changed?
+values  → What is the state?
+messages → What is the LLM saying?
+custom → What do I want to tell the UI?
+debug → What is happening internally?
+```
+
+---
+
+# 32. Which Mode Should You Use?
+
+### Normal workflow
+
+Use:
+
+```python
+stream_mode="updates"
+```
+
+### Need complete state after every step
+
+Use:
+
+```python
+stream_mode="values"
+```
+
+### Chatbot token streaming
+
+Use:
+
+```python
+stream_mode="messages"
+```
+
+### Custom progress messages
+
+Use:
+
+```python
+stream_mode="custom"
+```
+
+### Development/debugging
+
+Use:
+
+```python
+stream_mode="debug"
+```
+
+### Advanced agent UI
+
+Combine modes:
+
+```text
+messages
++
+updates
++
+custom
+```
+
+---
+
+# 33. A Practical Agent Streaming Design
+
+For an actual production-style AI application, I'd structure the streams approximately like this:
+
+```text
+                         LangGraph
+                            │
+             ┌──────────────┼──────────────┐
+             │              │              │
+             ▼              ▼              ▼
+          updates        messages        custom
+             │              │              │
+             ▼              ▼              ▼
+        Node status      LLM tokens      Progress
+             │              │              │
+             └──────────────┼──────────────┘
+                            ▼
+                         Backend
+                            │
+                         SSE/WebSocket
+                            │
+                            ▼
+                         React UI
+```
+
+Then the React UI can display:
+
+```text
+┌──────────────────────────────────┐
+│ AI Research Agent                │
+├──────────────────────────────────┤
+│ ✓ Planner                        │
+│ ✓ Retriever                      │
+│ ✓ Researcher                     │
+│ ⏳ Writer                         │
+│                                  │
+│ Based on the retrieved           │
+│ information, machine learning    │
+│ models can...                    │
+└──────────────────────────────────┘
+```
+
+---
+
+# 34. The Most Important Concept
+
+When learning LangGraph streaming, don't think of it simply as:
+
+> "Streaming the final answer."
+
+Think of it as:
+
+> **Streaming the execution of a graph.**
+
+An LLM token stream is only one part of it.
+
+A LangGraph application can have:
+
+```text
+                Graph Execution
+                      │
+       ┌──────────────┼───────────────┐
+       ▼              ▼               ▼
+   State updates   LLM tokens    Custom events
+       │              │               │
+       ▼              ▼               ▼
+    updates        messages         custom
+```
+
+This is what makes LangGraph streaming particularly useful for **agentic AI systems**.
+
+---
+
+# 35. What You Should Learn Next
+
+Since you're learning LangGraph systematically, I'd learn streaming in this order:
+
+```text
+1. graph.stream()
+       ↓
+2. stream_mode="updates"
+       ↓
+3. stream_mode="values"
+       ↓
+4. LLM token streaming
+       ↓
+5. stream_mode="messages"
+       ↓
+6. custom streaming
+       ↓
+7. async streaming / astream()
+       ↓
+8. streaming with tools
+       ↓
+9. streaming with subgraphs
+       ↓
+10. LangGraph + FastAPI SSE
+       ↓
+11. LangGraph + React streaming UI
+       ↓
+12. Streaming + persistence
+       ↓
+13. Streaming + human-in-the-loop
+```
+
+For your **agentic AI projects**, the particularly important combination is:
+
+```text
+LangGraph
+   +
+messages
+   +
+updates
+   +
+custom
+   +
+astream()
+   +
+FastAPI SSE
+   +
+React
+```
+
+That gives you the foundation for building a **real-time agent UI**, rather than a chatbot that waits for the entire LangGraph execution to finish.
