@@ -1032,3 +1032,342 @@ then:
 ```
 
 ---
+
+# 22. Streaming in a Chatbot
+
+For a real chatbot, the architecture becomes:
+
+```text
+Frontend
+   │
+   │ user message
+   ▼
+Backend
+   │
+   ▼
+LangGraph
+   │
+   ▼
+LLM
+   │
+   ├── token 1
+   ├── token 2
+   ├── token 3
+   ├── token 4
+   └── ...
+   │
+   ▼
+Backend
+   │
+   ▼
+Frontend
+```
+
+Instead of:
+
+```text
+POST /chat
+
+(wait 10 seconds)
+
+{
+    "answer": "..."
+}
+```
+
+you can have:
+
+```text
+POST /chat
+
+data: "Hello"
+data: " how"
+data: " can"
+data: " I"
+data: " help"
+...
+```
+
+This is usually implemented with technologies such as:
+
+* Server-Sent Events (SSE)
+* WebSockets
+* streaming HTTP responses
+
+---
+
+# 23. LangGraph + FastAPI Streaming
+
+A common architecture is:
+
+```text
+React
+  │
+  │ HTTP/SSE
+  ▼
+FastAPI
+  │
+  ▼
+LangGraph
+  │
+  ▼
+LLM
+```
+
+For example, conceptually:
+
+```python
+@app.post("/chat")
+async def chat(request: Request):
+
+    async def generate():
+
+        async for chunk in graph.astream(
+            input_data,
+            stream_mode="messages"
+        ):
+
+            yield chunk
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream"
+    )
+```
+
+Your React frontend can consume these events and update the answer incrementally.
+
+---
+
+# 24. Synchronous vs Asynchronous Streaming
+
+LangGraph provides both synchronous and asynchronous execution patterns.
+
+### Synchronous
+
+```python
+for chunk in graph.stream(...):
+    print(chunk)
+```
+
+### Asynchronous
+
+```python
+async for chunk in graph.astream(...):
+    print(chunk)
+```
+
+Use asynchronous streaming when your application is asynchronous, such as:
+
+```text
+FastAPI
+   ↓
+async LangGraph
+   ↓
+async LLM/tool calls
+```
+
+---
+
+# 25. `stream()` vs `astream()`
+
+Simple mental model:
+
+```text
+stream()
+   ↓
+synchronous
+
+astream()
+   ↓
+asynchronous
+```
+
+Example:
+
+```python
+for chunk in graph.stream(
+    input_data,
+    stream_mode="updates"
+):
+    ...
+```
+
+versus:
+
+```python
+async for chunk in graph.astream(
+    input_data,
+    stream_mode="updates"
+):
+    ...
+```
+
+For backend web applications, `astream()` is often more natural.
+
+---
+
+# 26. Streaming and Tools
+
+Streaming becomes especially interesting with tools.
+
+Suppose your agent:
+
+```text
+User
+ ↓
+Agent
+ ↓
+Search tool
+ ↓
+Agent
+ ↓
+Calculator
+ ↓
+Agent
+ ↓
+Final response
+```
+
+You could stream:
+
+```text
+Agent: I need to search for information.
+
+Tool: search("LangGraph streaming")
+
+Tool result: ...
+
+Agent: Now I need to calculate...
+
+Tool: calculator(...)
+
+Tool result: ...
+
+Agent: Based on this...
+```
+
+This gives you visibility into the agent's execution.
+
+---
+
+# 27. Streaming Agent Progress
+
+A useful UI could show:
+
+```text
+┌─────────────────────────────┐
+│ AI Agent                    │
+├─────────────────────────────┤
+│ ✓ Understanding request     │
+│ ✓ Searching knowledge base  │
+│ ✓ Retrieved 8 documents     │
+│ ✓ Analyzing results         │
+│ ⏳ Generating answer         │
+├─────────────────────────────┤
+│ Based on the information... │
+│                             │
+└─────────────────────────────┘
+```
+
+This can be implemented using a combination of:
+
+```text
+updates
++
+custom
++
+messages
+```
+
+---
+
+# 28. Streaming and Subgraphs
+
+This becomes important once you build larger systems.
+
+Imagine:
+
+```text
+Parent Graph
+     │
+     ▼
+Research Subgraph
+     │
+     ├── Search
+     ├── Retrieve
+     └── Analyze
+     │
+     ▼
+Writer Subgraph
+     │
+     ├── Outline
+     └── Generate
+```
+
+You may want streaming information from both the parent graph and subgraphs.
+
+Conceptually:
+
+```text
+Parent
+  │
+  ├── Research
+  │     ├── Search
+  │     ├── Retrieve
+  │     └── Analyze
+  │
+  └── Writer
+        ├── Outline
+        └── Generate
+```
+
+Streaming becomes a mechanism for observing this hierarchical execution.
+
+---
+
+# 29. Streaming and Checkpointing Are Different
+
+Don't confuse these two.
+
+### Streaming
+
+Answers:
+
+> "What is happening while my graph is running?"
+
+### Persistence/checkpointing
+
+Answers:
+
+> "How do I save and recover graph state?"
+
+So:
+
+```text
+Streaming
+   ↓
+Real-time execution visibility
+
+Persistence
+   ↓
+State/history/recovery
+```
+
+You can use both simultaneously.
+
+For example:
+
+```text
+LangGraph
+   │
+   ├── Checkpointer
+   │      ↓
+   │   Saves state
+   │
+   └── Streaming
+          ↓
+       Sends events
+```
+
+---
