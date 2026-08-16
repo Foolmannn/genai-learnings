@@ -36,14 +36,6 @@ chatbot = graph.compile(checkpointer=checkpointer)
 
 # )
 # 
-for message_chunk,metadata in chatbot.stream({
-    'messages':[HumanMessage(content='What is the recipe of the chicken momo?')]},
-    config={'configurable':{'thread_id':"thread-1"}},
-    stream_mode='messages'
 
-    ):
-
-    if message_chunk.content:
-        print(message_chunk.content, end =" ", flush = True )
 
 # print(type(stream)) # this is generator class
