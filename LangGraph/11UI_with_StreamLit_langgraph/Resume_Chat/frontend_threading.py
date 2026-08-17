@@ -1,109 +1,244 @@
 import streamlit as st
-from lg_backend_Threading import chatbot
-from langchain_core.messages import HumanMessage
-import uuid 
+import uuid
 
-#********************************************* Utitlity Functions *************************************************
+from lg_backend_Threading import chatbot
+from langchain_core.messages import HumanMessage, AIMessage
+
+
+# ============================================================
+# Utility Functions
+# ============================================================
 
 def generate_thread_id():
-    thread_id = uuid.uuid4()
-    return thread_id
+    """Generate a unique thread ID."""
+    return str(uuid.uuid4())
 
-def reset_chat():
-    thread_id = generate_thread_id()
-    st.session_state['thread_id']=thread_id
-    add_thread(st.session_state['thread_id'])
-    st.session_state['message_history']=[]
 
 def add_thread(thread_id):
-    if thread_id not in st.session_state['chat_threads']:
-        st.session_state['chat_threads'].append(thread_id)
+    """Add a thread to the thread list if it doesn't already exist."""
+    if thread_id not in st.session_state["chat_threads"]:
+        st.session_state["chat_threads"].append(thread_id)
+
+
+def reset_chat():
+    """Create a new chat thread."""
+    thread_id = generate_thread_id()
+
+    st.session_state["thread_id"] = thread_id
+    st.session_state["message_history"] = []
+
+    add_thread(thread_id)
+
+
+def extract_text(content):
+    """
+    Extract plain text from LangChain message content.
+
+    Handles:
+        1. String content
+        2. List of dictionaries containing {'type': 'text', 'text': '...'}
+    """
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+
+        text = ""
+
+        for item in content:
+
+            if isinstance(item, dict):
+
+                if item.get("type") == "text":
+                    text += item.get("text", "")
+
+        return text
+
+    return ""
+
 
 def load_conversation(thread_id):
-    return chatbot.get_state(config={'configurable': {'thread_id':thread_id}}).values['messages']
+    """
+    Load messages stored in LangGraph checkpointer.
+    """
 
-  
-# st.session_state - > dict : this streamlit dictionary retains the state until manually tab is refresshed 
+    state = chatbot.get_state(
+        config={
+            "configurable": {
+                "thread_id": thread_id
+            }
+        }
+    )
+
+    messages = state.values.get("messages", [])
+
+    temp_messages = []
+
+    for message in messages:
+
+        # Human message
+        if isinstance(message, HumanMessage):
+
+            temp_messages.append({
+                "role": "user",
+                "content": extract_text(message.content)
+            })
+
+        # AI message
+        elif isinstance(message, AIMessage):
+
+            text = extract_text(message.content)
+
+            if text:
+                temp_messages.append({
+                    "role": "assistant",
+                    "content": text
+                })
+
+    return temp_messages
 
 
-#******************************************** Session setup **************************************************
-if 'message_history' not in st.session_state:
-    st.session_state['message_history']= []
+# ============================================================
+# Session State Setup
+# ============================================================
+
+if "message_history" not in st.session_state:
+    st.session_state["message_history"] = []
 
 
-if 'thread_id' not in st.session_state:
-
-    st.session_state['thread_id'] = generate_thread_id()
-
-if 'chat_threads' not in st.session_state:
-    st.session_state['chat_threads']=[]
-
-add_thread(st.session_state['thread_id'])
+if "thread_id" not in st.session_state:
+    st.session_state["thread_id"] = generate_thread_id()
 
 
+if "chat_threads" not in st.session_state:
+    st.session_state["chat_threads"] = []
 
-#******************************************** Sidebar UI **************************************************
 
-st.sidebar.title('LangGraph Chatbot')
+# Make sure current thread exists
+add_thread(st.session_state["thread_id"])
 
-if st.sidebar.button('New Chat'):
+
+# ============================================================
+# Sidebar UI
+# ============================================================
+
+st.sidebar.title("LangGraph Chatbot")
+
+
+# New Chat button
+if st.sidebar.button("New Chat"):
+
     reset_chat()
 
-st.sidebar.header('My Conversations')
-
-for thread_id in st.session_state['chat_threads']:
-
-    if st.sidebar.button(str(thread_id)):
-        st.session_state['thread_id'] = thread_id
-        messages = load_conversation(thread_id)
-
-        temp_messages = []
-
-        for message in messages:
-            if isinstance(message,HumanMessage):
-                role='user'
-            else:
-                role='assistant'
-            temp_messages.append({'role': role, 'content':message.content})
-        st.session_state['message_history'] = temp_messages
-
-#******************************************** Main UI **************************************************
+    # Rerun so the UI immediately switches to the new conversation
+    st.rerun()
 
 
-# loading the converstion history 
-
-for message in st.session_state['message_history']:
-    with st.chat_message(message['role']):
-        st.text(message['content'])
+st.sidebar.header("My Conversations")
 
 
-userInput = st.chat_input('Type Here')
+# Display existing conversations
+for thread_id in st.session_state["chat_threads"]:
 
-if userInput:
+    if st.sidebar.button(
+        thread_id,
+        key=f"thread_{thread_id}"
+    ):
 
-    # first add the message to the history
-    st.session_state['message_history'].append({'role':'user','content': userInput})
-    with st.chat_message('user'):
-        st.text(userInput)
+        st.session_state["thread_id"] = thread_id
 
-    CONFIG = {'configurable': {'thread_id': st.session_state['thread_id']}}   
-    
+        st.session_state["message_history"] = load_conversation(
+            thread_id
+        )
 
-
-    # first add the ai message to the history
+        st.rerun()
 
 
+# ============================================================
+# Main UI
+# ============================================================
+
+st.title("LangGraph Chatbot")
+
+
+# ------------------------------------------------------------
+# Display Conversation History
+# ------------------------------------------------------------
+
+for message in st.session_state["message_history"]:
+
+    with st.chat_message(message["role"]):
+
+        st.write(message["content"])
+
+
+# ------------------------------------------------------------
+# Chat Input
+# ------------------------------------------------------------
+
+user_input = st.chat_input("Type here...")
+
+
+if user_input:
+
+    # ========================================================
+    # User Message
+    # ========================================================
+
+    st.session_state["message_history"].append({
+        "role": "user",
+        "content": user_input
+    })
+
+    with st.chat_message("user"):
+        st.write(user_input)
+
+
+    # ========================================================
+    # LangGraph Configuration
+    # ========================================================
+
+    config = {
+        "configurable": {
+            "thread_id": st.session_state["thread_id"]
+        }
+    }
+
+
+    # ========================================================
+    # AI Streaming Response
+    # ========================================================
 
     with st.chat_message("assistant"):
-        ai_message = st.write_stream(
-            message_chunk.content[0]['text']
+
+        def generate_response():
+
             for message_chunk, metadata in chatbot.stream(
-                {"messages": [HumanMessage(content=userInput)]},
-                config=CONFIG ,
+                {
+                    "messages": [
+                        HumanMessage(content=user_input)
+                    ]
+                },
+                config=config,
                 stream_mode="messages"
-            )
-            if  message_chunk.content
+            ):
+
+                # Extract text from the chunk
+                text = extract_text(message_chunk.content)
+
+                if text:
+                    yield text
+
+
+        ai_message = st.write_stream(
+            generate_response()
         )
+
+
+    # ========================================================
+    # Save AI Response to Streamlit History
+    # ========================================================
 
     st.session_state["message_history"].append({
         "role": "assistant",
