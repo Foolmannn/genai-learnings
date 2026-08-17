@@ -74,12 +74,14 @@ def load_conversation(thread_id):
     messages = state.values.get("messages", [])
 
     temp_messages = []
+    title=""
 
     for message in messages:
 
         # Human message
         if isinstance(message, HumanMessage):
-
+            if not title:
+                title=extract_text(message.content)
             temp_messages.append({
                 "role": "user",
                 "content": extract_text(message.content)
@@ -96,7 +98,7 @@ def load_conversation(thread_id):
                     "content": text
                 })
 
-    return temp_messages
+    return [temp_messages,title]
 
 
 # ============================================================
@@ -140,9 +142,16 @@ st.sidebar.header("My Conversations")
 
 # Display existing conversations
 for thread_id in st.session_state["chat_threads"]:
-
+    
+    title = load_conversation(thread_id)[1]
+    if title:
+        header=title
+    else:
+        header=thread_id
     if st.sidebar.button(
-        thread_id,
+        # thread_id,
+        header,
+        
         key=f"thread_{thread_id}"
     ):
 
@@ -150,7 +159,7 @@ for thread_id in st.session_state["chat_threads"]:
 
         st.session_state["message_history"] = load_conversation(
             thread_id
-        )
+        )[0]
 
         st.rerun()
 
