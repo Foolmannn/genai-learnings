@@ -29,13 +29,3 @@ graph.add_edge("chat_node", END)
 chatbot = graph.compile(checkpointer=checkpointer)
 
 
-# stream = chatbot.stream({
-#     'messages':[HumanMessage(content='What is the recipe of the chicken momo?')]},
-# config={'configurable':{'thread_id':"thread-1"}},
-# stream_mode='messages'
-
-# )
-# 
-
-
-# print(type(stream)) # this is generator class

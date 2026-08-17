@@ -9,7 +9,18 @@ def generate_thread_id():
     thread_id = uuid.uuid4()
     return thread_id
 
+def reset_chat():
+    thread_id = generate_thread_id()
+    st.session_state['thread_id']=thread_id
+    add_thread(st.session_state['thread_id'])
+    st.session_state['message_history']=[]
 
+def add_thread(thread_id):
+    if thread_id not in st.session_state['chat_threads']:
+        st.session_state['chat_threads'].append(thread_id)
+
+def load_conversation(thread_id):
+    return chatbot.get_state(config={'configurable': {'thread_id':thread_id}}).values['messages']
 
   
 # st.session_state - > dict : this streamlit dictionary retains the state until manually tab is refresshed 
@@ -24,15 +35,37 @@ if 'thread_id' not in st.session_state:
 
     st.session_state['thread_id'] = generate_thread_id()
 
+if 'chat_threads' not in st.session_state:
+    st.session_state['chat_threads']=[]
+
+add_thread(st.session_state['thread_id'])
+
+
+
 #******************************************** Sidebar UI **************************************************
 
 st.sidebar.title('LangGraph Chatbot')
 
-st.sidebar.button('New Chat')
+if st.sidebar.button('New Chat'):
+    reset_chat()
 
 st.sidebar.header('My Conversations')
 
-st.sidebar.text(st.session_state['thread_id'])
+for thread_id in st.session_state['chat_threads']:
+
+    if st.sidebar.button(str(thread_id)):
+        st.session_state['thread_id'] = thread_id
+        messages = load_conversation(thread_id)
+
+        temp_messages = []
+
+        for message in messages:
+            if isinstance(message,HumanMessage):
+                role='user'
+            else:
+                role='assistant'
+            temp_messages.append({'role': role, 'content':message.content})
+        st.session_state['message_history'] = temp_messages
 
 #******************************************** Main UI **************************************************
 
@@ -43,7 +76,7 @@ for message in st.session_state['message_history']:
     with st.chat_message(message['role']):
         st.text(message['content'])
 
-CONFIG = {'configurable': {'thread_id':'thread-1'}}   
+
 userInput = st.chat_input('Type Here')
 
 if userInput:
