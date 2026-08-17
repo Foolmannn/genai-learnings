@@ -49,7 +49,7 @@ if userInput:
 
     with st.chat_message("assistant"):
         ai_message = st.write_stream(
-            message_chunk.content
+            message_chunk.content[0]['text']
             for message_chunk, metadata in chatbot.stream(
                 {
                     "messages": [
@@ -63,7 +63,7 @@ if userInput:
                 },
                 stream_mode="messages"
             )
-            if isinstance(message_chunk.content, str) and message_chunk.content
+            if  message_chunk.content
         )
 
     st.session_state["message_history"].append({
