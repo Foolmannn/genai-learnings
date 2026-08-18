@@ -1,7 +1,7 @@
 import streamlit as st
 import uuid
 
-from lg_chatbot_backend_with_db import chatbot
+from lg_chatbot_backend_with_db import chatbot,retrieve_all_threads
 from langchain_core.messages import HumanMessage, AIMessage
 
 
@@ -114,7 +114,7 @@ if "thread_id" not in st.session_state:
 
 
 if "chat_threads" not in st.session_state:
-    st.session_state["chat_threads"] = []
+    st.session_state["chat_threads"] = retrieve_all_threads()
 
 
 # Make sure current thread exists
