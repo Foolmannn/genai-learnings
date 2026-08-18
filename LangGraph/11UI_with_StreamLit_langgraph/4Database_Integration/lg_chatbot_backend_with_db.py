@@ -33,8 +33,18 @@ graph.add_edge("chat_node", END)
 chatbot = graph.compile(checkpointer=checkpointer)
 
 # test : 
-CONFIG = {'configurable': {'thread_id':'thread-1'}}     
+# CONFIG = {'configurable': {'thread_id':'thread-2'}}   # So by changing the thread id we can store each conversation differently   
 
-result =chatbot.invoke({'messages':[HumanMessage(content='What is my Name ?')]},config=CONFIG)
-print(result)
+# result =chatbot.invoke({'messages':[HumanMessage(content='What is my Name ?')]},config=CONFIG)
 
+# print(result)
+
+def retrieve_all_threads():
+
+    all_threads = set()
+    for checkpoint in checkpointer.list(None):
+        # print(checkpoint.config["configurable"]['thread_id'])
+        all_threads.add(checkpoint.config["configurable"]['thread_id'])
+
+    # print(list(all_threads))
+    return list(all_threads)
