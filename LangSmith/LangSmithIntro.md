@@ -1197,3 +1197,512 @@ Agent applications
 ```
 
 ---
+
+# 28. LangSmith + Streamlit
+
+Since you've been building LangGraph applications with Streamlit, the architecture could be:
+
+```text
+             Streamlit
+                 │
+                 ↓
+            LangGraph
+                 │
+        ┌────────┼────────┐
+        ↓        ↓        ↓
+       LLM      Tools    DB
+        │        │        │
+        └────────┼────────┘
+                 ↓
+             LangSmith
+```
+
+Your user sees:
+
+```text
+Streamlit UI
+```
+
+You see:
+
+```text
+LangSmith
+```
+
+for debugging and monitoring.
+
+So LangSmith isn't really a replacement for Streamlit.
+
+They solve completely different problems.
+
+---
+
+# 29. Streamlit vs LangSmith
+
+| Streamlit               | LangSmith               |
+| ----------------------- | ----------------------- |
+| Builds UI               | Observes AI application |
+| User-facing             | Developer-facing        |
+| Chat interface          | Tracing                 |
+| Forms                   | Debugging               |
+| Dashboards              | Evaluation              |
+| Visualization           | Monitoring              |
+| Application interaction | Application analysis    |
+
+You might use both:
+
+```text
+                User
+                 ↓
+             Streamlit
+                 ↓
+             LangGraph
+                 ↓
+          ┌──────┴──────┐
+          ↓             ↓
+         LLM           Tools
+          │             │
+          └──────┬──────┘
+                 ↓
+             LangSmith
+```
+
+---
+
+# 30. LangSmith + LangGraph + SQLite
+
+Since you've been learning LangGraph persistence with SQLite, there is an important distinction.
+
+SQLite:
+
+```text
+Stores application state
+```
+
+LangSmith:
+
+```text
+Observes application execution
+```
+
+For example:
+
+```text
+              LangGraph
+                  │
+        ┌─────────┴─────────┐
+        ↓                   ↓
+     SQLite             LangSmith
+        │                   │
+        ↓                   ↓
+Conversation          Traces/debugging
+state/history        evaluation/monitoring
+```
+
+They are **not competitors**.
+
+You can use both.
+
+---
+
+# 31. SQLite vs LangSmith
+
+Suppose your chatbot has:
+
+```python
+thread_id = "thread-123"
+```
+
+SQLite might store:
+
+```text
+thread_id
+messages
+state
+checkpoint
+```
+
+LangSmith might record:
+
+```text
+thread_id
+node execution
+LLM calls
+prompts
+outputs
+latency
+metadata
+errors
+```
+
+So:
+
+```text
+SQLite
+→ Application persistence
+
+LangSmith
+→ Observability/evaluation
+```
+
+---
+
+# 32. LangSmith in a real production architecture
+
+A more realistic architecture might look like:
+
+```text
+                       User
+                         │
+                         ↓
+                  React / Streamlit
+                         │
+                         ↓
+                       API
+                         │
+                         ↓
+                    LangGraph
+                         │
+         ┌───────────────┼───────────────┐
+         ↓               ↓               ↓
+       LLM           Retriever          Tools
+         │               │               │
+         ↓               ↓               ↓
+    OpenAI/etc.       Vector DB       External APIs
+                         │
+                         │
+                         ↓
+                      Database
+                         
+                         │
+                         ↓
+                    LangSmith
+                         │
+        ┌────────────────┼────────────────┐
+        ↓                ↓                ↓
+     Tracing         Evaluation       Monitoring
+```
+
+This is a very common mental model for LLM application development.
+
+---
+
+# 33. LangSmith development lifecycle
+
+A good workflow is:
+
+```text
+1. Build
+   ↓
+2. Trace
+   ↓
+3. Debug
+   ↓
+4. Create dataset
+   ↓
+5. Evaluate
+   ↓
+6. Improve
+   ↓
+7. Deploy
+   ↓
+8. Monitor
+   ↓
+9. Collect failures
+   ↓
+10. Add failures to dataset
+   ↓
+11. Evaluate again
+```
+
+This creates a continuous improvement loop.
+
+---
+
+# 34. The most important concept: traces + datasets
+
+If you're learning LangSmith seriously, focus first on these two concepts.
+
+### Traces answer:
+
+> **What happened?**
+
+### Datasets/evaluations answer:
+
+> **How good was it?**
+
+Together:
+
+```text
+Trace
+ ↓
+Understand failure
+ ↓
+Create test case
+ ↓
+Dataset
+ ↓
+Evaluate improvement
+ ↓
+Deploy
+```
+
+---
+
+# 35. Example: debugging your LangGraph chatbot
+
+Imagine you have:
+
+```python
+def chatbot(state):
+    response = model.invoke(state["messages"])
+
+    return {
+        "messages": [response]
+    }
+```
+
+User asks:
+
+```text
+"What is LangGraph?"
+```
+
+The model responds incorrectly.
+
+You inspect LangSmith:
+
+```text
+TRACE
+│
+├── chatbot
+│
+├── Input
+│   └── What is LangGraph?
+│
+├── Messages
+│   ├── system message
+│   └── user message
+│
+├── LLM
+│   ├── input
+│   ├── output
+│   ├── latency
+│   └── tokens
+│
+└── Final output
+```
+
+You discover:
+
+```text
+System prompt accidentally says:
+"Answer questions about LangChain only."
+```
+
+Problem found.
+
+That's the value of observability.
+
+---
+
+# 36. Example: debugging an agent
+
+Consider an agent:
+
+```text
+User
+ ↓
+Agent
+ ↓
+Reason
+ ↓
+Tool selection
+ ↓
+Search
+ ↓
+Tool result
+ ↓
+Reason
+ ↓
+Final answer
+```
+
+A trace could conceptually look like:
+
+```text
+Agent
+│
+├── User input
+│
+├── LLM
+│
+├── Tool call
+│   └── Search
+│
+├── Tool result
+│
+├── LLM
+│
+└── Final answer
+```
+
+If the agent repeatedly calls a tool:
+
+```text
+LLM
+ ↓
+Tool
+ ↓
+LLM
+ ↓
+Tool
+ ↓
+LLM
+ ↓
+Tool
+...
+```
+
+you can identify the problem much more easily.
+
+---
+
+# 37. LangSmith is not just "logging"
+
+This distinction is important.
+
+Traditional logging:
+
+```python
+print("Calling model")
+print(response)
+```
+
+gives you basic information.
+
+LangSmith provides a much richer model:
+
+```text
+Tracing
++
+Nested execution
++
+Metadata
++
+Inputs/outputs
++
+Evaluation
++
+Datasets
++
+Experiments
++
+Monitoring
+```
+
+So you should think of LangSmith as an **LLM application observability and evaluation platform**, rather than simply a logging library.
+
+---
+
+# 38. What you should learn first
+
+Since you're already working with LangGraph, I recommend this order:
+
+### Level 1 — Basics
+
+Learn:
+
+```text
+What is LangSmith?
+What is a project?
+What is a trace?
+What is a run?
+```
+
+### Level 2 — LangGraph integration
+
+Learn:
+
+```text
+LangGraph → LangSmith
+Node tracing
+LLM tracing
+Tool tracing
+Metadata
+Tags
+```
+
+### Level 3 — Debugging
+
+Learn:
+
+```text
+Trace inspection
+Errors
+Latency
+Token usage
+Input/output inspection
+```
+
+### Level 4 — Evaluation
+
+Learn:
+
+```text
+Datasets
+Examples
+Evaluators
+LLM-as-judge
+Experiments
+Comparisons
+```
+
+### Level 5 — Production
+
+Learn:
+
+```text
+Production tracing
+Monitoring
+Feedback
+Online evaluation
+Failure analysis
+```
+
+---
+
+# 39. A complete mental model
+
+Keep this picture in your head:
+
+```text
+                  LLM APPLICATION
+                        │
+        ┌───────────────┼────────────────┐
+        │               │                │
+     LangChain       LangGraph          Tools
+        │               │                │
+        └───────────────┼────────────────┘
+                        │
+                        ↓
+                    LangSmith
+                        │
+        ┌───────────────┼────────────────┐
+        │               │                │
+        ↓               ↓                ↓
+     Observe          Evaluate         Improve
+        │               │                │
+        ↓               ↓                ↓
+     Traces          Datasets        Experiments
+        │               │                │
+        └───────────────┼────────────────┘
+                        ↓
+                   Better AI App
+```
+
+The simplest summary is:
+
+> **LangChain/LangGraph tells your application what to do. LangSmith lets you see what it did, determine whether it did it well, and systematically improve it.**
+
+For your current **LangGraph + Streamlit + SQLite** learning path, LangSmith is especially worth learning because it ties the pieces together: **LangGraph handles workflow/state, SQLite can handle persistence, Streamlit handles the UI, and LangSmith handles observability + evaluation.**
