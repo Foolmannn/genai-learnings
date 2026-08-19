@@ -767,3 +767,433 @@ You want to know whether the change actually improved the system.
 That's where evaluation becomes important.
 
 ---
+
+# 17. Dataset
+
+A **dataset** is a collection of test examples.
+
+For example:
+
+```text
+Dataset: customer_support_test
+
+Question                         Expected Answer
+-----------------------------------------------------
+How do I reset my password?      Reset via Settings
+What is your refund policy?      30-day refund
+How do I contact support?        support@example...
+```
+
+You can use the dataset repeatedly.
+
+```text
+Dataset
+   ↓
+Application Version 1
+   ↓
+Results
+
+Dataset
+   ↓
+Application Version 2
+   ↓
+Results
+```
+
+Then compare them.
+
+---
+
+# 18. Evaluation types
+
+There are several ways to evaluate an LLM application.
+
+## A. Exact match
+
+Useful when the answer must exactly match something.
+
+```text
+Expected: 42
+Actual:   42
+
+→ Pass
+```
+
+---
+
+## B. String similarity
+
+Compare expected and actual outputs.
+
+---
+
+## C. LLM-as-a-judge
+
+Another LLM evaluates the answer.
+
+For example:
+
+```text
+Question:
+What is gradient descent?
+
+Expected:
+Gradient descent is an optimization algorithm...
+
+Actual:
+Gradient descent is used to minimize a loss function...
+
+Judge:
+Score = 0.9
+```
+
+You can evaluate dimensions such as:
+
+```text
+Correctness
+Relevance
+Faithfulness
+Helpfulness
+Style
+```
+
+---
+
+# 19. RAG evaluation
+
+For RAG systems, you may evaluate:
+
+```text
+Retrieval quality
+       ↓
+Did we retrieve the right documents?
+
+Generation quality
+       ↓
+Did the answer use those documents correctly?
+```
+
+For example:
+
+```text
+Question
+   ↓
+Retriever
+   ↓
+Retrieved Context
+   ↓
+LLM
+   ↓
+Answer
+```
+
+Potential metrics:
+
+```text
+Context relevance
+Context recall
+Answer correctness
+Faithfulness
+```
+
+The exact metric names and evaluation implementations depend on your evaluation setup.
+
+---
+
+# 20. Online vs offline evaluation
+
+This is another important concept.
+
+### Offline evaluation
+
+You test before deploying.
+
+```text
+Dataset
+ ↓
+Your application
+ ↓
+Evaluation
+ ↓
+Score
+ ↓
+Improve
+ ↓
+Deploy
+```
+
+### Online evaluation
+
+You evaluate real production traffic.
+
+```text
+Real users
+    ↓
+Production application
+    ↓
+LangSmith
+    ↓
+Traces
+    ↓
+Evaluation
+    ↓
+Monitoring
+```
+
+---
+
+# 21. Prompt management
+
+Another useful capability is managing prompts.
+
+Instead of hardcoding:
+
+```python
+prompt = """
+You are a helpful assistant...
+"""
+```
+
+you can treat prompts as versioned assets.
+
+Conceptually:
+
+```text
+Prompt
+│
+├── v1
+├── v2
+├── v3
+└── v4
+```
+
+Then you can determine:
+
+```text
+v1 → 72%
+v2 → 78%
+v3 → 84%
+v4 → 81%
+```
+
+Now you know which prompt performs better.
+
+This becomes increasingly useful as your application grows.
+
+---
+
+# 22. Experiments
+
+Suppose you want to compare:
+
+```text
+Model A
+vs
+Model B
+```
+
+on:
+
+```text
+100 questions
+```
+
+You can evaluate both.
+
+```text
+              Dataset
+                 │
+       ┌─────────┴─────────┐
+       ↓                   ↓
+    Model A             Model B
+       ↓                   ↓
+    Results              Results
+       │                   │
+       └─────────┬─────────┘
+                 ↓
+             Comparison
+```
+
+You can compare things such as:
+
+```text
+Accuracy
+Latency
+Token usage
+Cost
+Quality
+```
+
+This is much better than manually testing a few prompts.
+
+---
+
+# 23. Production monitoring
+
+Once your application is deployed:
+
+```text
+User
+ ↓
+Your API
+ ↓
+LangGraph
+ ↓
+LLM
+```
+
+you need to monitor it.
+
+Questions include:
+
+```text
+Are requests failing?
+
+How long are requests taking?
+
+Are token counts increasing?
+
+Which requests fail most often?
+
+Which model performs better?
+
+Are users getting poor answers?
+
+Is one particular node causing latency?
+```
+
+LangSmith can help you monitor these execution traces and identify problematic patterns.
+
+---
+
+# 24. Debugging latency
+
+Imagine:
+
+```text
+Total latency = 8 seconds
+```
+
+That's too slow.
+
+Where did the 8 seconds go?
+
+Tracing might show:
+
+```text
+Router          0.3 sec
+Retriever       0.7 sec
+LLM #1          1.8 sec
+Tool            3.5 sec
+LLM #2          1.7 sec
+----------------------
+Total           8.0 sec
+```
+
+Now you immediately know:
+
+```text
+Tool = bottleneck
+```
+
+Without tracing, you'd just know:
+
+```text
+The application is slow.
+```
+
+---
+
+# 25. Debugging token usage
+
+Suppose one request consumes:
+
+```text
+Input: 8,000 tokens
+Output: 500 tokens
+```
+
+You might discover:
+
+```text
+Conversation history
++
+Huge retrieved documents
++
+Large system prompt
+```
+
+are being sent to the model.
+
+Tracing helps you identify this.
+
+Then you can optimize:
+
+```text
+Before:
+8,500 tokens
+
+After:
+3,000 tokens
+```
+
+That can improve both latency and cost.
+
+---
+
+# 26. Metadata and tags
+
+You can attach information to executions.
+
+For example:
+
+```text
+environment = production
+user_type = premium
+application = chatbot
+version = v2
+```
+
+You can then filter traces.
+
+Conceptually:
+
+```text
+All traces
+    │
+    ├── production
+    ├── development
+    ├── v1
+    └── v2
+```
+
+This becomes particularly useful when debugging production applications.
+
+---
+
+# 27. Sessions / conversations
+
+For chat applications, a user may have:
+
+```text
+Conversation
+│
+├── Message 1
+├── Message 2
+├── Message 3
+├── Message 4
+└── Message 5
+```
+
+You can associate executions with a conversation/session identifier so that related interactions can be analyzed together.
+
+This is especially useful for:
+
+```text
+Chatbots
+Customer support
+AI assistants
+Agent applications
+```
+
+---
