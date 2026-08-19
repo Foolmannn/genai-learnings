@@ -735,7 +735,7 @@ LangSmith provides evaluation workflows for this.
 
 # 16. Why evaluation is necessary
 
-Imagine you modify your prompt.
+Imagine you modify your prompt.<>
 
 ### Version 1
 
@@ -1705,4 +1705,3 @@ The simplest summary is:
 
 > **LangChain/LangGraph tells your application what to do. LangSmith lets you see what it did, determine whether it did it well, and systematically improve it.**
 
-For your current **LangGraph + Streamlit + SQLite** learning path, LangSmith is especially worth learning because it ties the pieces together: **LangGraph handles workflow/state, SQLite can handle persistence, Streamlit handles the UI, and LangSmith handles observability + evaluation.**
