@@ -18,24 +18,21 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 
-# --- LangSmith env (make sure these are set) ---
-# LANGCHAIN_TRACING_V2=true
-# LANGCHAIN_API_KEY=...
-# LANGCHAIN_PROJECT=pdf_rag_demo
+
 # from langchain_huggingface import HuggingFaceEmbeddings
 # from langchain_google_genai import ChatGoogleGenerativeAI
 
 
-# os.environ['LANGSMITH_PROJECT']='RAG Chatbot 2'
+os.environ['LANGSMITH_PROJECT']='RAG Chatbot 2'
 # llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
 
-#     emb = HuggingFaceEmbeddings(model_name ='sentence-transformers/all-MiniLM-L6-v2')
+# emb = HuggingFaceEmbeddings(model_name ='sentence-transformers/all-MiniLM-L6-v2')
 
 
 
 load_dotenv()
 
-PDF_PATH = "islr.pdf"  # change to your file
+PDF_PATH = "islr.pdf"  
 
 # ---------- traced setup steps ----------
 @traceable(name="load_pdf")
