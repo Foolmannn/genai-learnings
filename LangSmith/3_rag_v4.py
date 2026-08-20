@@ -1,5 +1,7 @@
 # pip install -U langchain langchain-openai langchain-community faiss-cpu pypdf python-dotenv langsmith
 
+# THIS VERSION SOLVES THE TIME AND LATENCY DUE TO RERUN OF THE EMBEDDING, LOADING, CHUNKING 
+
 import os
 import json
 import hashlib
@@ -10,7 +12,7 @@ from langsmith import traceable
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough, RunnableLambda
@@ -20,7 +22,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 
-os.environ['LANGSMITH_PROJECT']='RAG Chatbot 2'
+os.environ['LANGSMITH_PROJECT']='RAG Chatbot 4'
 
 
 # emb = HuggingFaceEmbeddings(model_name ='sentence-transformers/all-MiniLM-L6-v2')
