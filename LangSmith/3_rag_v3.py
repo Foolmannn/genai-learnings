@@ -16,13 +16,11 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 os.environ['LANGSMITH_PROJECT']='RAG Chatbot 3'
-# llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
 
-#     emb = HuggingFaceEmbeddings(model_name ='sentence-transformers/all-MiniLM-L6-v2')
 
 load_dotenv()
 
-PDF_PATH = "islr.pdf"  # <- change to your file
+PDF_PATH = "islr.pdf"  
 
 # ----------------- helpers (not traced individually) -----------------
 @traceable(name="load_pdf")

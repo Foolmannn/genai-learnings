@@ -23,19 +23,20 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # from langchain_google_genai import ChatGoogleGenerativeAI
 
 
-os.environ['LANGSMITH_PROJECT']='RAG Chatbot 2'
+# os.environ['LANGSMITH_PROJECT']='RAG Chatbot 2'
 # llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
 
 # emb = HuggingFaceEmbeddings(model_name ='sentence-transformers/all-MiniLM-L6-v2')
 
 
+os.environ['LANGSMITH_PROJECT']='RAG Chatbot 2'
 
 load_dotenv()
 
 PDF_PATH = "islr.pdf"  
 
 # ---------- traced setup steps ----------
-@traceable(name="load_pdf")
+@traceable(name="load_pdf",tags=['pdf','loader'],metadata={'loader':'PyPDFLoader'},)  # we can add more descriptions with this decorator like tags, metadata . IT HELPS IN THE SEARCHING 
 def load_pdf(path: str):
     loader = PyPDFLoader(path)
     return loader.load()  # list[Document]
@@ -47,7 +48,7 @@ def split_documents(docs, chunk_size=1000, chunk_overlap=150):
     )
     return splitter.split_documents(docs)
 
-@traceable(name="build_vectorstore")
+@traceable(name="build_vectorstore",tags=['embedding','vectorstore'],metadata={'embedding_model':'Huggingface sentence transformers'})
 def build_vectorstore(splits):
     emb = HuggingFaceEmbeddings(model_name ='sentence-transformers/all-MiniLM-L6-v2')
     # FAISS.from_documents internally calls the embedding model:
