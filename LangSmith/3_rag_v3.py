@@ -6,12 +6,20 @@ from dotenv import load_dotenv
 from langsmith import traceable
 
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnablePassthrough, RunnableLambda
 from langchain_core.output_parsers import StrOutputParser
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+
+# os.environ['LANGSMITH_PROJECT']='RAG Chatbot 2'
+# llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
+
+#     emb = HuggingFaceEmbeddings(model_name ='sentence-transformers/all-MiniLM-L6-v2')
 
 load_dotenv()
 

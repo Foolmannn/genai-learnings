@@ -3,8 +3,12 @@ from dotenv import load_dotenv
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 import os
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-os.environ['LANGCHAIN_PROJECT']='Sequential LLM App'
+
+
+# this will set the new project from the code. Instead of using the ui in the langsmith web app. 
+os.environ['LANGSMITH_PROJECT']='Sequential LLM App'
 
 load_dotenv()
 
@@ -28,6 +32,7 @@ chain = prompt1 | model1 | parser | prompt2 | model2 | parser
 
 # in this config dictionary we can add our own attributes like the tags, metadaata 
 config={
+    'run_name':'Report Summarizer chain', # this avoids the default name of the sequence name like 'Runnable Sequence"
     'tags':['llm app' , 'report generation','summarization'],
     'metadata':{'model': 'google flash lite', 'parser':'Stroutputparser'}
 }
