@@ -1114,3 +1114,982 @@ Which version performed better?
 LangSmith's current platform includes prompt resources as part of workspace development/configuration. ([Docs by LangChain][5])
 
 ---
+
+# 25. Prompt + Evaluation = Powerful Combination
+
+This is where LangSmith becomes really useful.
+
+Imagine:
+
+```text
+             Dataset
+                │
+       ┌────────┼────────┐
+       ▼        ▼        ▼
+   Prompt v1 Prompt v2 Prompt v3
+       │        │        │
+       ▼        ▼        ▼
+   Evaluator  Evaluator Evaluator
+       │        │        │
+       ▼        ▼        ▼
+      81%      89%      85%
+```
+
+You immediately know:
+
+```text
+Prompt v2 is best
+```
+
+Then:
+
+```text
+Prompt v2
+   ↓
+Production
+```
+
+---
+
+# 26. Human Feedback
+
+Automated evaluators aren't perfect.
+
+Sometimes humans need to review outputs.
+
+For example:
+
+```text
+User
+ ↓
+AI response
+ ↓
+Human reviewer
+ ↓
+👍 Good
+👎 Bad
+```
+
+Or:
+
+```text
+Score:
+1 ───────── 5
+```
+
+This feedback becomes useful evaluation data.
+
+LangSmith supports feedback collection and human annotation through annotation queues and inline feedback mechanisms. ([Docs by LangChain][2])
+
+---
+
+# 27. Annotation Queues
+
+Imagine your application generated:
+
+```text
+10,000 responses
+```
+
+You don't want a human to manually inspect everything.
+
+Instead:
+
+```text
+10,000 traces
+       │
+       ▼
+Filter
+       │
+       ▼
+Potentially problematic traces
+       │
+       ▼
+Annotation Queue
+       │
+       ▼
+Human reviewers
+```
+
+For example:
+
+```text
+confidence < 0.5
+```
+
+or:
+
+```text
+evaluator_score < 0.6
+```
+
+Then humans review those cases.
+
+This creates a very useful:
+
+```text
+AI evaluator
+      ↓
+Find suspicious examples
+      ↓
+Human review
+      ↓
+Better evaluation dataset
+```
+
+---
+
+# 28. Production Feedback Loop
+
+This is one of the most important concepts to understand.
+
+You start with:
+
+```text
+Initial dataset
+      ↓
+Offline evaluation
+      ↓
+Deploy
+      ↓
+Production
+      ↓
+Online evaluation
+      ↓
+Find failures
+      ↓
+Human review
+      ↓
+Add failures to dataset
+      ↓
+Offline evaluation
+      ↓
+Improve system
+      ↓
+Deploy again
+```
+
+So:
+
+> Production becomes a source of new test cases.
+
+LangSmith explicitly describes this as a production feedback loop: online evaluation surfaces real-world problems that can become new offline dataset examples. ([Docs by LangChain][3])
+
+---
+
+# 29. Dashboards
+
+You don't want to inspect thousands of traces individually.
+
+Dashboards allow you to see aggregate information.
+
+For example:
+
+```text
+┌────────────────────────────────────┐
+│       Production Overview           │
+├────────────────────────────────────┤
+│ Requests       125,432              │
+│ Error Rate       1.2%               │
+│ Avg Latency      2.4 sec             │
+│ Avg Cost         $0.008              │
+│ Quality          91%                 │
+├────────────────────────────────────┤
+│ Quality over time                   │
+│                                    │
+│ 95% ──────╮                         │
+│           ╰────╮                    │
+│                ╰──── 91%            │
+└────────────────────────────────────┘
+```
+
+LangSmith supports charts and dashboards for monitoring and analysis. ([Docs by LangChain][5])
+
+---
+
+# 30. Cost Monitoring
+
+LLM applications can become expensive quickly.
+
+Suppose:
+
+```text
+100 requests/day
+```
+
+becomes:
+
+```text
+100,000 requests/day
+```
+
+You need to understand:
+
+```text
+Which model?
+Which project?
+Which user?
+Which workflow?
+Which prompt?
+How many tokens?
+How much money?
+```
+
+Tracing provides usage information that can be analyzed at application/project levels.
+
+This is especially important when your LangGraph agent makes multiple LLM calls:
+
+```text
+User request
+   │
+   ├── Planner LLM      $0.002
+   ├── Tool reasoning   $0.001
+   ├── RAG generation   $0.004
+   └── Final response   $0.003
+                         ------
+                         $0.010
+```
+
+At 100,000 requests:
+
+```text
+$0.010 × 100,000 = $1,000
+```
+
+Therefore, observability isn't only about quality.
+
+It's also about **economics**.
+
+---
+
+# 31. Latency Monitoring
+
+For agents, latency can come from many places.
+
+```text
+Total latency =
+
+LLM latency
++
+retrieval latency
++
+tool latency
++
+other LLM calls
++
+network latency
+```
+
+Example trace:
+
+```text
+Agent                 4.8 sec
+│
+├── Planner LLM       1.2 sec
+├── Vector Search     0.3 sec
+├── Weather API       2.1 sec  ← bottleneck
+└── Final LLM         1.2 sec
+```
+
+Without tracing:
+
+```text
+"Agent is slow."
+```
+
+With tracing:
+
+```text
+"Weather API is causing 44% of latency."
+```
+
+That's the difference between logging and observability.
+
+---
+
+# 32. Error Debugging
+
+Suppose a LangGraph agent crashes.
+
+Without LangSmith:
+
+```text
+500 Internal Server Error
+```
+
+Not very useful.
+
+With tracing:
+
+```text
+Trace
+ │
+ ├── classify ✓
+ │
+ ├── retrieve ✓
+ │
+ ├── tool call ✓
+ │
+ └── generate ✗
+       │
+       └── Invalid structured output
+```
+
+Now you know exactly where the problem occurred.
+
+---
+
+# 33. Tags and Metadata
+
+You can attach metadata to runs.
+
+For example:
+
+```python
+config = {
+    "metadata": {
+        "user_type": "premium",
+        "environment": "production",
+        "version": "v2"
+    },
+    "tags": [
+        "customer-support",
+        "rag"
+    ]
+}
+```
+
+Then you can filter:
+
+```text
+environment = production
+```
+
+or:
+
+```text
+version = v2
+```
+
+or:
+
+```text
+user_type = premium
+```
+
+This becomes extremely useful when debugging large systems.
+
+---
+
+# 34. Automations
+
+Instead of manually responding to every event:
+
+```text
+Trace
+  ↓
+Rule
+  ↓
+Action
+```
+
+For example:
+
+```text
+IF
+    evaluator score < 0.5
+
+THEN
+    send webhook
+```
+
+or:
+
+```text
+IF
+    specific failure occurs
+
+THEN
+    add to annotation queue
+```
+
+or:
+
+```text
+IF
+    performance degrades
+
+THEN
+    trigger CI/CD workflow
+```
+
+LangSmith supports automations using rules, webhooks, and online evaluations. ([Docs by LangChain][2])
+
+---
+
+# 35. LangSmith + LangGraph
+
+Since you're learning LangGraph, this is the combination I recommend focusing on.
+
+Imagine:
+
+```text
+                 LangGraph
+                     │
+                     ▼
+              ┌─────────────┐
+              │    Agent    │
+              └──────┬──────┘
+                     │
+             LangSmith tracing
+                     │
+                     ▼
+             ┌─────────────┐
+             │   Traces    │
+             └──────┬──────┘
+                    │
+       ┌────────────┼────────────┐
+       ▼            ▼            ▼
+   Evaluation   Monitoring   Debugging
+       │            │            │
+       ▼            ▼            ▼
+   Experiments   Alerts       Trace UI
+       │
+       ▼
+   Better Agent
+```
+
+---
+
+# 36. A Real LangGraph Example
+
+Suppose you're building:
+
+```text
+Customer Support Agent
+```
+
+with:
+
+```text
+START
+ │
+ ▼
+Classify Question
+ │
+ ├── Billing ──────┐
+ │                 │
+ ├── Technical ────┤
+ │                 ▼
+ └── General ───> Retrieve
+                    │
+                    ▼
+                   LLM
+                    │
+                    ▼
+                  END
+```
+
+You can use LangSmith at every level.
+
+### Tracing
+
+See:
+
+```text
+classification
+retrieval
+LLM
+tool calls
+final response
+```
+
+### Evaluation
+
+Measure:
+
+```text
+classification accuracy
+retrieval quality
+answer correctness
+faithfulness
+```
+
+### Prompt experimentation
+
+Compare:
+
+```text
+classifier prompt v1
+classifier prompt v2
+```
+
+### Monitoring
+
+Watch:
+
+```text
+latency
+errors
+quality
+cost
+```
+
+### Alerting
+
+```text
+IF correctness < 80%
+    → alert
+```
+
+### Human feedback
+
+```text
+User says:
+"This answer was incorrect."
+
+→ feedback
+→ review
+→ dataset
+```
+
+---
+
+# 37. Offline vs Online Evaluation
+
+This distinction is **very important for interviews and real projects**.
+
+|                   | Offline           | Online                   |
+| ----------------- | ----------------- | ------------------------ |
+| When?             | Before deployment | Production               |
+| Data              | Dataset           | Real user traces         |
+| Purpose           | Test              | Monitor                  |
+| Reference answers | Often available   | Usually unavailable      |
+| Main concern      | Regression        | Production quality       |
+| Example           | Prompt comparison | Hallucination monitoring |
+| Human feedback    | Possible          | Very useful              |
+| Automation        | CI/CD             | Alerts/webhooks          |
+
+LangSmith explicitly categorizes evaluation this way. ([Docs by LangChain][1])
+
+---
+
+# 38. The Complete LangSmith Development Loop
+
+This is the mental model I recommend remembering:
+
+```text
+                  ┌───────────────┐
+                  │ Build Agent   │
+                  └───────┬───────┘
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │ Create Dataset│
+                  └───────┬───────┘
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │ Create Evaluator│
+                 └────────┬────────┘
+                          │
+                          ▼
+                  ┌───────────────┐
+                  │ Run Experiment│
+                  └───────┬───────┘
+                          │
+                          ▼
+                    Score Results
+                          │
+              ┌───────────┴───────────┐
+              │                       │
+           Good                     Bad
+              │                       │
+              ▼                       ▼
+          Deploy                  Improve
+                                      │
+                    ┌─────────────────┼──────────────┐
+                    │                 │              │
+                    ▼                 ▼              ▼
+                  Prompt            Model          Agent
+                  change            change        logic
+                    │                 │              │
+                    └─────────────────┼──────────────┘
+                                      │
+                                      ▼
+                              Run Experiment
+                                      │
+                                      ▼
+                                   Deploy
+                                      │
+                                      ▼
+                              Production Traces
+                                      │
+                 ┌────────────────────┼──────────────────┐
+                 │                    │                  │
+                 ▼                    ▼                  ▼
+             Monitoring           Online Eval        Feedback
+                 │                    │                  │
+                 └────────────────────┼──────────────────┘
+                                      │
+                                      ▼
+                                   Alerts
+                                      │
+                                      ▼
+                              Find Production
+                                  Failures
+                                      │
+                                      ▼
+                              Add to Dataset
+                                      │
+                                      └──────► Repeat
+```
+
+That loop is arguably the most important thing to understand about LangSmith.
+
+---
+
+# 39. LangSmith in a production architecture
+
+A realistic architecture could look like:
+
+```text
+                    User
+                     │
+                     ▼
+               Next.js / API
+                     │
+                     ▼
+              LangGraph Agent
+                     │
+         ┌───────────┼─────────────┐
+         │           │             │
+         ▼           ▼             ▼
+       LLM        Retriever       Tools
+         │           │             │
+         └───────────┼─────────────┘
+                     │
+                     ▼
+                LangSmith
+                     │
+      ┌──────────────┼────────────────┐
+      │              │                │
+      ▼              ▼                ▼
+   Tracing       Evaluation       Monitoring
+      │              │                │
+      │              ▼                ▼
+      │          Experiments       Alerts
+      │              │
+      │              ▼
+      │          Prompt testing
+      │
+      ▼
+   Debugging
+```
+
+---
+
+# 40. Other Important LangSmith Features
+
+Beyond the features you specifically asked about, you should know these:
+
+### Datasets
+
+Your AI test suite.
+
+### Experiments
+
+Compare different versions.
+
+### Feedback
+
+Capture user/human judgments.
+
+### Annotation queues
+
+Send selected examples to humans.
+
+### Dashboards
+
+Visualize production behavior.
+
+### Automations
+
+React automatically to events.
+
+### Webhooks
+
+Connect LangSmith to external systems.
+
+### Prompt management
+
+Store/version prompts.
+
+### Deployment
+
+Deploy agent applications.
+
+### CI/CD
+
+Quality-gate deployments using tests and evaluations.
+
+LangSmith's official CI/CD example combines unit/integration/end-to-end tests with offline evaluations, deployment gates, continuous monitoring, and alerting. ([Docs by LangChain][6])
+
+---
+
+# 41. How all the features relate
+
+A useful way to categorize everything is:
+
+```text
+             LANGSMITH
+                 │
+     ┌───────────┼────────────┐
+     │           │            │
+     ▼           ▼            ▼
+ DEVELOPMENT   TESTING     PRODUCTION
+     │           │            │
+     ▼           ▼            ▼
+   Prompts     Datasets     Tracing
+   Playground  Evaluators   Monitoring
+               Experiments  Alerts
+               Regression   Feedback
+               Backtesting  Automations
+```
+
+Or even simpler:
+
+```text
+PROMPT
+   ↓
+EXPERIMENT
+   ↓
+EVALUATION
+   ↓
+DEPLOY
+   ↓
+TRACE
+   ↓
+MONITOR
+   ↓
+ALERT
+   ↓
+FEEDBACK
+   ↓
+DATASET
+   ↓
+EXPERIMENT
+   ↓
+...
+```
+
+---
+
+# 42. What you should learn first
+
+Since you're currently learning **LangGraph**, I wouldn't try to learn every LangSmith feature simultaneously.
+
+Follow this order:
+
+### Level 1 — Observability
+
+Learn:
+
+```text
+Tracing
+Runs
+Projects
+Threads
+Metadata
+Tags
+```
+
+Goal:
+
+> "I can inspect exactly what my LangGraph agent did."
+
+---
+
+### Level 2 — Datasets
+
+Learn:
+
+```text
+Datasets
+Examples
+Reference outputs
+Production traces → datasets
+```
+
+Goal:
+
+> "I have a reliable test set for my agent."
+
+---
+
+### Level 3 — Evaluators
+
+Learn:
+
+```text
+Code evaluator
+LLM-as-judge
+Pairwise evaluator
+Composite evaluator
+```
+
+Goal:
+
+> "I can automatically measure agent quality."
+
+---
+
+### Level 4 — Experiments
+
+Learn:
+
+```text
+Experiment
+Baseline
+Comparison
+Regression
+Backtesting
+```
+
+Goal:
+
+> "I can prove whether my new agent is better."
+
+---
+
+### Level 5 — Prompt Engineering
+
+Learn:
+
+```text
+Prompt versions
+Prompt testing
+Prompt → Dataset → Evaluation
+```
+
+Goal:
+
+> "I can systematically improve prompts."
+
+---
+
+### Level 6 — Production Monitoring
+
+Learn:
+
+```text
+Online evaluators
+Dashboards
+Latency
+Errors
+Costs
+Quality metrics
+```
+
+Goal:
+
+> "I know what my production agent is doing."
+
+---
+
+### Level 7 — Alerting + Automation
+
+Learn:
+
+```text
+Rules
+Alerts
+Webhooks
+Automations
+Annotation queues
+```
+
+Goal:
+
+> "My system can detect and react to failures automatically."
+
+---
+
+# 43. The most important distinction
+
+Don't think:
+
+> **LangSmith = place where LangGraph logs are displayed.**
+
+Think:
+
+> **LangSmith = lifecycle platform for developing, evaluating, debugging, deploying, and continuously improving AI applications.**
+
+The progression is:
+
+```text
+                Build
+                  ↓
+               Trace
+                  ↓
+               Inspect
+                  ↓
+              Evaluate
+                  ↓
+             Experiment
+                  ↓
+              Improve
+                  ↓
+               Deploy
+                  ↓
+              Monitor
+                  ↓
+               Alert
+                  ↓
+              Feedback
+                  ↓
+               Dataset
+                  ↓
+              Evaluate
+                  ↓
+               Improve
+```
+
+That's the core philosophy behind LangSmith.
+
+And importantly, LangSmith is not limited to LangGraph/LangChain; its observability and evaluation tooling supports multiple frameworks and model providers. ([Docs by LangChain][2])
+
+### For your LangGraph learning
+
+The next practical step I'd recommend is building **one small LangGraph agent and adding LangSmith progressively**:
+
+```text
+1. LangGraph agent
+       ↓
+2. LangSmith tracing
+       ↓
+3. Dataset with 20–50 questions
+       ↓
+4. Code evaluator
+       ↓
+5. LLM-as-judge evaluator
+       ↓
+6. Experiment: Agent v1 vs v2
+       ↓
+7. Online evaluator
+       ↓
+8. Dashboard
+       ↓
+9. Alert when quality drops
+       ↓
+10. Human feedback → dataset
+```
+
+That project will teach you far more than learning LangSmith's UI feature-by-feature.
+
+[1]: https://docs.langchain.com/langsmith/evaluation?utm_source=chatgpt.com "LangSmith Evaluation - Docs by LangChain"
+[2]: https://docs.langchain.com/langsmith/observability?utm_source=chatgpt.com "LangSmith Observability - Docs by LangChain"
+[3]: https://docs.langchain.com/langsmith/evaluation-types?utm_source=chatgpt.com "Evaluation types - Docs by LangChain"
+[4]: https://docs.langchain.com/langsmith/changelog?utm_source=chatgpt.com "LangSmith Cloud changelog - Docs by LangChain"
+[5]: https://docs.langchain.com/langsmith/organization-workspace-operations?utm_source=chatgpt.com "Organization and workspace operations reference - LangChain Docs"
+[6]: https://docs.langchain.com/langsmith/cicd-pipeline-example?utm_source=chatgpt.com "Implement a CI/CD pipeline using LangSmith Deployment and ..."
