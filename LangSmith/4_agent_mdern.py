@@ -101,7 +101,9 @@ response = agent.invoke(
             {
                 "role": "user",
                 # "content": "What is the current temperature of Kathmandu?",
-                "content": "What is the current temperature of Butwal?"
+                # "content": "What is the current temperature of Butwal?",
+                # "content": "Identify the hottest city in Nepal. And give its current temperature.", # More complex prompt. No api data for nepalgunj 
+                "content": "Identify the most polluted city in India. And give its current temperature.", # More complex prompt. 
             }
         ]
     }
