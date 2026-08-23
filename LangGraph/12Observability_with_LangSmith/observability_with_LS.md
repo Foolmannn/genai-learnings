@@ -1007,3 +1007,875 @@ Persistence ≠ Observability
 They complement each other.
 
 ---
+
+# 24. LangSmith Trace for a RAG Application
+
+Consider a RAG system:
+
+```text
+User Question
+      ↓
+Query Rewrite
+      ↓
+Retriever
+      ↓
+Documents
+      ↓
+Prompt Construction
+      ↓
+LLM
+      ↓
+Answer
+```
+
+A trace could look like:
+
+```text
+RAG Graph
+│
+├── Query Rewrite
+│   └── LLM
+│
+├── Retriever
+│   └── Vector Store
+│
+├── Generate Prompt
+│
+└── LLM
+```
+
+Now imagine the final answer is incorrect.
+
+You can investigate:
+
+### Question 1
+
+Was the query rewritten correctly?
+
+```text
+Original:
+"What about its limitations?"
+
+Rewritten:
+"What are the limitations of PCA?"
+```
+
+### Question 2
+
+Did retrieval find the correct documents?
+
+```text
+Documents:
+doc1
+doc2
+doc7
+```
+
+### Question 3
+
+Did the LLM receive those documents?
+
+### Question 4
+
+Did the model generate the answer based on them?
+
+This is much better than simply inspecting the final response.
+
+---
+
+# 25. Agent Observability
+
+Consider a ReAct-style agent:
+
+```text
+User
+ ↓
+LLM
+ ↓
+Thought/Decision
+ ↓
+Tool Call
+ ↓
+Tool Result
+ ↓
+LLM
+ ↓
+Tool Call
+ ↓
+Tool Result
+ ↓
+LLM
+ ↓
+Final Answer
+```
+
+A trace lets you inspect the sequence.
+
+For example:
+
+```text
+Agent
+│
+├── LLM
+│   └── decides: search_web
+│
+├── Search Tool
+│
+├── LLM
+│   └── decides: calculator
+│
+├── Calculator
+│
+└── LLM
+    └── final answer
+```
+
+This is invaluable for debugging agent behavior.
+
+---
+
+# 26. Why This Matters for LangGraph
+
+LangGraph is fundamentally about **stateful workflows**.
+
+You might have:
+
+```text
+Nodes
+Edges
+Conditional Edges
+Loops
+Tools
+Subgraphs
+LLMs
+State
+Persistence
+Human-in-the-loop
+```
+
+As complexity increases, debugging using:
+
+```python
+print(state)
+```
+
+becomes increasingly difficult.
+
+Observability provides a structured view:
+
+```text
+                    LangGraph
+                        │
+        ┌───────────────┼────────────────┐
+        ▼               ▼                ▼
+      Nodes           Tools             LLMs
+        │               │                │
+        └───────────────┼────────────────┘
+                        ▼
+                   LangSmith
+                        │
+       ┌────────────────┼─────────────────┐
+       ▼                ▼                 ▼
+     Traces          Metrics            Errors
+       │                │                 │
+       ▼                ▼                 ▼
+    Debugging       Monitoring        Evaluation
+```
+
+---
+
+# 27. Debugging Example
+
+Suppose your agent gives:
+
+```text
+User:
+What is 25 * 40?
+
+Agent:
+I don't know.
+```
+
+Your graph is:
+
+```text
+START
+ ↓
+agent
+ ↓
+tools
+ ↓
+agent
+ ↓
+END
+```
+
+You inspect LangSmith.
+
+You discover:
+
+```text
+Agent
+ ↓
+LLM
+ ↓
+Tool call:
+calculator
+ ↓
+ERROR
+```
+
+Then:
+
+```text
+calculator input:
+
+"25 × 40"
+```
+
+But your calculator expects:
+
+```text
+25 * 40
+```
+
+So the actual problem wasn't:
+
+```text
+LLM
+```
+
+It was:
+
+```text
+Tool input formatting
+```
+
+This is the type of issue observability makes easy to find.
+
+---
+
+# 28. Debugging a Bad RAG Answer
+
+Suppose:
+
+```text
+Question:
+"What is the refund policy?"
+```
+
+The model answers:
+
+```text
+Refunds are available for 30 days.
+```
+
+But the correct policy is:
+
+```text
+Refunds are available for 14 days.
+```
+
+Your trace might show:
+
+```text
+Retriever
+ ↓
+Retrieved document:
+old_policy.pdf
+ ↓
+LLM
+ ↓
+30 days
+```
+
+Now you've discovered the real issue:
+
+```text
+Retrieval problem
+```
+
+not necessarily:
+
+```text
+LLM problem
+```
+
+This distinction is extremely important.
+
+---
+
+# 29. Observability + Evaluation
+
+Observability answers:
+
+> **What happened?**
+
+Evaluation answers:
+
+> **Was the result good?**
+
+Together:
+
+```text
+                LangSmith
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+   Observability          Evaluation
+          │                   │
+      What happened?      Was it good?
+          │                   │
+          └─────────┬─────────┘
+                    ▼
+              Improvement
+```
+
+For example:
+
+```text
+Trace:
+Retriever → docs A,B,C
+
+Evaluation:
+Answer correctness = 0
+```
+
+Now you can investigate why.
+
+---
+
+# 30. Online vs Offline Observability
+
+There are two important environments.
+
+## Development
+
+You might inspect traces manually:
+
+```text
+Run application
+     ↓
+Open LangSmith
+     ↓
+Inspect trace
+     ↓
+Fix code
+```
+
+## Production
+
+You want continuous monitoring:
+
+```text
+Production
+    ↓
+LangSmith
+    ↓
+Thousands of traces
+    ↓
+Filter
+    ↓
+Errors
+Latency
+Tokens
+Failures
+Quality
+```
+
+This is where observability becomes much more than debugging.
+
+---
+
+# 31. Monitoring
+
+Imagine you deploy an agent.
+
+You may want to monitor:
+
+```text
+Requests
+Errors
+Latency
+Token usage
+Cost
+Tool failures
+Model failures
+Quality
+```
+
+For example:
+
+```text
+Production Agent
+
+Requests:
+10,000
+
+Errors:
+1.2%
+
+Average latency:
+3.1 sec
+
+Average tokens:
+4,200
+
+Tool failure:
+0.8%
+```
+
+You can use this information to determine whether the system is healthy.
+
+---
+
+# 32. Alerts
+
+Monitoring becomes even more useful when combined with alerts.
+
+Conceptually:
+
+```text
+Metric
+  ↓
+Threshold
+  ↓
+Alert
+```
+
+For example:
+
+```text
+Error rate > 5%
+        ↓
+      ALERT
+```
+
+or:
+
+```text
+Latency > 10 sec
+        ↓
+      ALERT
+```
+
+or:
+
+```text
+Quality score drops
+        ↓
+      ALERT
+```
+
+This allows you to detect production problems instead of waiting for users to report them.
+
+---
+
+# 33. Prompt Experiments
+
+Suppose you have:
+
+### Prompt A
+
+```text
+Answer the question concisely.
+```
+
+### Prompt B
+
+```text
+Answer the question with an explanation and example.
+```
+
+You can compare their results.
+
+Conceptually:
+
+```text
+Prompt A
+ ↓
+100 test cases
+ ↓
+Evaluation
+
+Prompt B
+ ↓
+100 test cases
+ ↓
+Evaluation
+```
+
+Then determine:
+
+```text
+Prompt A:
+Accuracy = 82%
+
+Prompt B:
+Accuracy = 89%
+```
+
+This turns prompt engineering from:
+
+> "I think this prompt is better."
+
+into:
+
+> "The data shows this prompt performs better."
+
+---
+
+# 34. Dataset-Based Evaluation
+
+You can create a dataset such as:
+
+```text
+Question                    Expected Answer
+------------------------------------------------
+What is LangGraph?          ...
+What is persistence?        ...
+What is a reducer?          ...
+What is LangSmith?          ...
+```
+
+Then run your application against those examples.
+
+Conceptually:
+
+```text
+Dataset
+   │
+   ├── Example 1
+   ├── Example 2
+   ├── Example 3
+   └── Example 4
+          │
+          ▼
+      LangGraph
+          │
+          ▼
+       Outputs
+          │
+          ▼
+      Evaluators
+          │
+          ▼
+       Scores
+```
+
+This is especially valuable when modifying an existing agent.
+
+---
+
+# 35. Regression Testing
+
+This is one of the most important production use cases.
+
+Suppose version 1 gives:
+
+```text
+Accuracy = 91%
+```
+
+You modify your graph.
+
+Version 2 gives:
+
+```text
+Accuracy = 84%
+```
+
+Even if version 2 "looks okay" during manual testing, evaluation reveals that you introduced a regression.
+
+So you can think of LangSmith as helping provide:
+
+```text
+Observability
+       +
+Evaluation
+       +
+Experimentation
+       =
+Reliable LLM application development
+```
+
+---
+
+# 36. What Should You Instrument?
+
+For a serious LangGraph application, I would pay particular attention to:
+
+```text
+1. Graph execution
+2. LLM calls
+3. Tool calls
+4. Retrieval
+5. State transitions
+6. Errors
+7. Latency
+8. Token usage
+9. User/session metadata
+10. Evaluation scores
+```
+
+---
+
+# 37. A Good LangGraph Architecture
+
+For example:
+
+```text
+                    User
+                      │
+                      ▼
+                LangGraph
+                      │
+          ┌───────────┴───────────┐
+          │                       │
+       Router                  State
+          │                       │
+     ┌────┴────┐                  │
+     ▼         ▼                  │
+   Search    Calculator           │
+     │         │                  │
+     └────┬────┘                  │
+          ▼                       │
+        LLM                       │
+          │                       │
+          ▼                       │
+       Response                   │
+                                  │
+          └───────────────────────┘
+                      │
+                      ▼
+                 LangSmith
+                      │
+       ┌──────────────┼──────────────┐
+       ▼              ▼              ▼
+    Tracing        Monitoring      Evaluation
+       │              │              │
+       ▼              ▼              ▼
+    Debugging       Alerts       Improvement
+```
+
+---
+
+# 38. LangSmith vs `print()`
+
+A useful way to understand the difference:
+
+### `print()`
+
+```python
+print(state)
+```
+
+Good for:
+
+* quick debugging
+* local development
+* checking a variable
+
+But poor for:
+
+* large applications
+* production
+* historical analysis
+* filtering
+* comparing runs
+* tracking latency
+* token usage
+* structured traces
+
+### LangSmith
+
+Provides a much more structured view:
+
+```text
+Trace
+ ├── Inputs
+ ├── Outputs
+ ├── Metadata
+ ├── Tags
+ ├── LLM calls
+ ├── Tool calls
+ ├── Timing
+ ├── Errors
+ └── Evaluation
+```
+
+---
+
+# 39. A Practical Development Workflow
+
+If you're building a LangGraph application, a good workflow is:
+
+```text
+             Write Graph
+                  ↓
+             Enable Trace
+                  ↓
+             Run Graph
+                  ↓
+          Inspect LangSmith
+                  ↓
+        Find problematic node
+                  ↓
+             Fix code
+                  ↓
+             Run again
+                  ↓
+          Compare traces
+                  ↓
+             Evaluate
+                  ↓
+             Deploy
+                  ↓
+             Monitor
+```
+
+---
+
+# 40. How I Recommend You Learn It
+
+Since you're already working with **LangGraph, persistence, SQLite, streaming, agents, and LangSmith**, I'd learn observability in this order:
+
+### Level 1 — Basic tracing
+
+Understand:
+
+```text
+Trace
+Run
+Input
+Output
+Latency
+Error
+```
+
+### Level 2 — LangGraph tracing
+
+Understand:
+
+```text
+Graph
+Node
+Edge
+Conditional Edge
+State
+Tool
+LLM
+```
+
+and how they appear in a trace.
+
+### Level 3 — Production metadata
+
+Learn:
+
+```text
+Projects
+Tags
+Metadata
+Sessions
+Environments
+```
+
+### Level 4 — Monitoring
+
+Learn:
+
+```text
+Latency
+Errors
+Token usage
+Failure rates
+```
+
+### Level 5 — Evaluation
+
+Learn:
+
+```text
+Datasets
+Evaluators
+Experiments
+Comparisons
+Regression testing
+```
+
+### Level 6 — Production observability
+
+Finally:
+
+```text
+Tracing
++
+Monitoring
++
+Alerting
++
+Evaluation
++
+Prompt experimentation
+```
+
+---
+
+# 41. The Big Picture
+
+The most important mental model is:
+
+```text
+                         LangSmith
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+        ▼                    ▼                    ▼
+   Observability         Evaluation           Monitoring
+        │                    │                    │
+        ▼                    ▼                    ▼
+     What happened?      Was it good?       Is it healthy?
+        │                    │                    │
+        └────────────────────┼────────────────────┘
+                             ▼
+                       Improvement
+                             │
+                             ▼
+                    Better LangGraph App
+```
+
+And for LangGraph specifically:
+
+```text
+                    LANGGRAPH
+                        │
+                        ▼
+                 ┌─────────────┐
+                 │    State    │
+                 └──────┬──────┘
+                        │
+          ┌─────────────┼─────────────┐
+          ▼             ▼             ▼
+        Node           Node          Node
+          │             │             │
+         LLM           Tool          LLM
+          │             │             │
+          └─────────────┼─────────────┘
+                        │
+                        ▼
+                   LANGSMITH
+                        │
+          ┌─────────────┼─────────────┐
+          ▼             ▼             ▼
+        Trace        Metrics       Evaluation
+          │             │             │
+          ▼             ▼             ▼
+       Debugging     Monitoring    Quality
+```
+
+**In one sentence:**
+
+> **LangGraph controls how your agent executes; LangSmith gives you visibility into how that execution actually happened and whether the resulting system is performing well.**
+
+For your current LangGraph learning, the next particularly useful topic is **how to enable LangSmith tracing in a real LangGraph project and then read a complete trace containing `State → Node → LLM → Tool → Conditional Edge → Final Answer`**, because that connects the theory directly to the code you're already working with.
