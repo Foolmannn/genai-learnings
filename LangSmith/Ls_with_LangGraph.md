@@ -5,6 +5,7 @@ If you're learning **LangGraph**, then **LangSmith** is one of the most useful t
 A simple way to think about the relationship is:
 
 > **LangGraph = builds and runs your agent/workflow**
+A simple way to think a
 > **LangSmith = observes, debugs, evaluates, and monitors that workflow**
 
 They solve different problems but work extremely well together.
