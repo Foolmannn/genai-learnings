@@ -1069,3 +1069,806 @@ Then your tool can validate its arguments before execution.
 This is especially important for production systems.
 
 ---
+
+# 22. Tool Errors
+
+Tools can fail.
+
+For example:
+
+```python
+@tool
+def get_weather(city: str):
+    response = requests.get(...)
+    
+    if response.status_code != 200:
+        raise Exception("Weather API failed")
+
+    return response.json()
+```
+
+Possible failures:
+
+```text
+API unavailable
+Invalid input
+Authentication failure
+Database failure
+Timeout
+Rate limit
+```
+
+Your LangGraph architecture should account for these.
+
+Conceptually:
+
+```text
+LLM
+ ↓
+ToolNode
+ ↓
+Tool fails
+ ↓
+Error handling
+ ├── Retry
+ ├── Return error to LLM
+ └── Stop execution
+```
+
+---
+
+# 23. Tool Retry
+
+Some tools can be retried when failures are temporary.
+
+For example:
+
+```text
+API timeout
+     ↓
+Retry
+     ↓
+Success
+```
+
+But you should **not blindly retry every tool**.
+
+Consider:
+
+```text
+send_payment()
+```
+
+If the request succeeded but your application timed out before receiving the response, blindly retrying could potentially perform the action twice.
+
+Therefore:
+
+> Read-only tools are generally easier to retry than side-effecting tools.
+
+---
+
+# 24. Human Approval for Tools
+
+This is an important LangGraph capability.
+
+Imagine:
+
+```text
+User:
+Transfer Rs. 50,000 to account XYZ.
+```
+
+You don't necessarily want:
+
+```text
+LLM → transfer_money()
+```
+
+without approval.
+
+Instead:
+
+```text
+LLM
+ ↓
+transfer_money request
+ ↓
+Human approval
+ ├── Approve → execute
+ └── Reject  → stop
+```
+
+This is one of the areas where LangGraph's graph-based architecture becomes very useful.
+
+---
+
+# 25. Tools and State
+
+LangGraph is fundamentally state-based.
+
+For example:
+
+```python
+from langgraph.graph import MessagesState
+```
+
+Your state may contain:
+
+```text
+messages
+user_id
+cart
+order_id
+authentication
+retrieved_documents
+```
+
+A tool can use information from the state depending on how you structure your nodes/tools.
+
+For example:
+
+```text
+State
+ ├── user_id
+ ├── messages
+ └── authentication
+          ↓
+       Tool
+          ↓
+      Database
+```
+
+This allows tools to operate within the context of the current graph execution.
+
+---
+
+# 26. Tools vs Nodes
+
+This is a very important distinction.
+
+### Node
+
+A **node** is a component in your LangGraph workflow.
+
+```python
+builder.add_node("llm", llm_node)
+```
+
+### Tool
+
+A **tool** is a callable capability that the LLM can request.
+
+```python
+@tool
+def search(query):
+    ...
+```
+
+### ToolNode
+
+A **ToolNode** is a LangGraph node that executes tool calls.
+
+```python
+ToolNode(tools)
+```
+
+So:
+
+```text
+Tool
+ ↓
+Callable capability
+
+ToolNode
+ ↓
+LangGraph node responsible for executing tools
+```
+
+---
+
+# 27. Node vs Tool Example
+
+Suppose you have:
+
+```python
+def analyze_expense(state):
+    ...
+```
+
+This is a **node**.
+
+The graph decides when it executes:
+
+```text
+Graph
+ ↓
+analyze_expense
+```
+
+But:
+
+```python
+@tool
+def get_exchange_rate(currency: str):
+    ...
+```
+
+is a **tool**.
+
+The LLM can decide:
+
+```text
+LLM
+ ↓
+"I need exchange rate"
+ ↓
+get_exchange_rate()
+```
+
+So:
+
+> **Nodes are controlled by the graph.**
+> **Tools are typically requested by the LLM and executed by the graph.**
+
+---
+
+# 28. Tools vs Functions
+
+Another useful distinction:
+
+```text
+Python Function
+      ↓
+Developer calls it
+```
+
+Whereas:
+
+```text
+Tool
+      ↓
+LLM can request it
+```
+
+For example:
+
+```python
+def calculate_tax(amount):
+    ...
+```
+
+You call:
+
+```python
+calculate_tax(1000)
+```
+
+But with:
+
+```python
+@tool
+def calculate_tax(amount: float):
+    """Calculate tax for a given amount."""
+    ...
+```
+
+the LLM can decide:
+
+```text
+Call calculate_tax
+with amount=1000
+```
+
+---
+
+# 29. Tool Calling vs Agent
+
+These terms are related but not identical.
+
+### Tool calling
+
+The model produces a structured request:
+
+```text
+Call:
+get_weather("Kathmandu")
+```
+
+### Agent
+
+An agent can repeatedly reason and act:
+
+```text
+LLM
+ ↓
+Tool
+ ↓
+LLM
+ ↓
+Tool
+ ↓
+LLM
+ ↓
+Tool
+ ↓
+Final answer
+```
+
+LangGraph is especially useful for building these multi-step agentic workflows.
+
+---
+
+# 30. ReAct and Tools
+
+A classic ReAct-style architecture looks like:
+
+```text
+Reason
+  ↓
+Action
+  ↓
+Observation
+  ↓
+Reason
+  ↓
+Action
+  ↓
+Observation
+  ↓
+Final Answer
+```
+
+In LangGraph:
+
+```text
+             ┌───────────────┐
+             │      LLM      │
+             └───────┬───────┘
+                     ↓
+                Tool call?
+                /       \
+              Yes        No
+               ↓          ↓
+          ┌─────────┐    END
+          │ ToolNode│
+          └────┬────┘
+               ↓
+          Tool result
+               ↓
+              LLM
+```
+
+The loop:
+
+```text
+LLM → ToolNode → LLM
+```
+
+is the key mechanism.
+
+---
+
+# 31. Example: Web Search Agent
+
+Imagine:
+
+```python
+@tool
+def search_web(query: str) -> str:
+    """Search the internet for current information."""
+    ...
+```
+
+Then:
+
+```python
+tools = [search_web]
+
+llm_with_tools = llm.bind_tools(tools)
+```
+
+User:
+
+```text
+What are the latest developments in LangGraph?
+```
+
+The model may decide:
+
+```text
+search_web(
+    "latest developments in LangGraph"
+)
+```
+
+The ToolNode executes the search.
+
+Then:
+
+```text
+Search result
+ ↓
+LLM
+ ↓
+Summary
+```
+
+This is a basic research agent.
+
+---
+
+# 32. Example: Expense Tracker Agent
+
+This is particularly useful for understanding real-world tool architecture.
+
+Suppose your application has:
+
+```python
+@tool
+def add_expense(
+    category: str,
+    amount: float,
+    description: str
+):
+    """Add an expense to the user's expense tracker."""
+    ...
+
+
+@tool
+def get_expenses():
+    """Retrieve the user's recent expenses."""
+    ...
+
+
+@tool
+def get_monthly_summary():
+    """Return the current month's expense summary."""
+    ...
+```
+
+Now the user could say:
+
+```text
+I spent Rs. 800 on dinner.
+```
+
+LLM:
+
+```text
+add_expense(
+    category="Food",
+    amount=800,
+    description="Dinner"
+)
+```
+
+Or:
+
+```text
+How much have I spent this month?
+```
+
+LLM:
+
+```text
+get_monthly_summary()
+```
+
+This is a very realistic architecture for an AI-powered expense tracker.
+
+---
+
+# 33. Tool Description Matters a Lot
+
+Consider:
+
+```python
+@tool
+def search(query: str):
+    """Search the web."""
+```
+
+versus:
+
+```python
+@tool
+def search(query: str):
+    """
+    Search the internet for current information.
+
+    Use this tool when the user asks for:
+    - recent events
+    - current information
+    - information that may have changed
+    """
+```
+
+The second description gives the model much better guidance.
+
+Tool descriptions effectively become part of the model's decision-making context.
+
+---
+
+# 34. Tool Naming Matters
+
+Prefer:
+
+```python
+get_weather
+search_documents
+create_expense
+get_user_balance
+delete_expense
+```
+
+instead of:
+
+```python
+tool1
+tool2
+function_a
+function_b
+```
+
+Good names help the LLM choose the correct tool.
+
+---
+
+# 35. Tool Granularity
+
+Don't make one enormous tool:
+
+```python
+@tool
+def do_everything(...):
+    ...
+```
+
+Instead, use focused tools:
+
+```text
+get_user()
+get_expenses()
+create_expense()
+update_expense()
+delete_expense()
+```
+
+This gives the model clearer choices.
+
+However, don't split functionality unnecessarily either.
+
+A good tool should represent a meaningful operation.
+
+---
+
+# 36. Tool Security
+
+This is extremely important.
+
+Never assume:
+
+```text
+LLM-generated tool call = trusted input
+```
+
+It isn't.
+
+For example:
+
+```python
+@tool
+def delete_user(user_id: str):
+    ...
+```
+
+should not blindly trust the model.
+
+You should validate:
+
+```text
+Is user_id valid?
+        ↓
+Does current user own this resource?
+        ↓
+Is the operation allowed?
+        ↓
+Does the user need confirmation?
+        ↓
+Execute
+```
+
+The LLM should decide **what it wants to do**, but your application should enforce **what it is actually allowed to do**.
+
+---
+
+# 37. Read Tools vs Write Tools
+
+A useful production classification is:
+
+### Read-only
+
+```text
+search()
+get_user()
+get_balance()
+get_weather()
+query_database()
+```
+
+Generally lower risk.
+
+### Write/action
+
+```text
+create_order()
+delete_file()
+send_email()
+transfer_money()
+delete_user()
+```
+
+Potentially high risk.
+
+For action tools, consider:
+
+* validation
+* authorization
+* confirmation
+* idempotency
+* audit logs
+* rate limiting
+
+---
+
+# 38. Tool Architecture in Production
+
+A production LangGraph agent might look like:
+
+```text
+                     User
+                       ↓
+                  LangGraph
+                       ↓
+                  ┌────────┐
+                  │   LLM  │
+                  └───┬────┘
+                      ↓
+              Tool decision
+                      ↓
+              ┌───────┴────────┐
+              ↓                ↓
+         Search Tool       DB Tool
+              ↓                ↓
+          Search API       PostgreSQL
+              ↓                ↓
+              └───────┬────────┘
+                      ↓
+                     LLM
+                      ↓
+                 Final Answer
+```
+
+And around this you can add:
+
+```text
+Persistence
+   ↓
+Checkpointing
+
+Observability
+   ↓
+LangSmith
+
+Security
+   ↓
+Authorization
+
+Human approval
+   ↓
+Interrupts
+
+Error handling
+   ↓
+Retries
+```
+
+---
+
+# 39. Tools + LangSmith
+
+Since you've been studying **LangSmith + LangGraph**, tools are especially important for observability.
+
+A LangSmith trace can show:
+
+```text
+LangGraph Run
+│
+├── LLM
+│    └── tool_call: search_web
+│
+├── ToolNode
+│    └── search_web
+│
+├── LLM
+│
+└── Final Response
+```
+
+This allows you to investigate:
+
+* Which tool was called?
+* Why was it called?
+* What arguments were passed?
+* How long did the tool take?
+* Did the tool fail?
+* What did the tool return?
+* How many tools were called?
+* How many tokens were used around the calls?
+
+This is extremely useful when debugging agents.
+
+---
+
+# 40. The Most Important Concepts to Remember
+
+If you're learning LangGraph, I recommend remembering this chain:
+
+```text
+@tool
+   ↓
+Create tool
+   ↓
+bind_tools()
+   ↓
+LLM knows about tools
+   ↓
+LLM generates tool_call
+   ↓
+ToolNode
+   ↓
+Tool executes
+   ↓
+ToolMessage
+   ↓
+LLM receives result
+   ↓
+Final answer
+```
+
+And the graph:
+
+```text
+                 ┌─────────────┐
+                 │     LLM     │
+                 └──────┬──────┘
+                        ↓
+                 ┌──────────────┐
+                 │ Tool needed? │
+                 └──────┬───────┘
+                    Yes │ No
+                        │  └────────→ END
+                        ↓
+                 ┌────────────┐
+                 │  ToolNode  │
+                 └──────┬─────┘
+                        ↓
+                   Tool result
+                        ↓
+                       LLM
+                        │
+                        └─────────→ ...
+```
+
+### The four things you should clearly distinguish
+
+| Concept           | Purpose                                            |
+| ----------------- | -------------------------------------------------- |
+| `@tool`           | Converts a function into an LLM-callable tool      |
+| `bind_tools()`    | Makes the LLM aware of available tools             |
+| `ToolNode`        | Executes tool calls inside the LangGraph           |
+| `tools_condition` | Routes the graph based on whether tool calls exist |
+
+Once these four concepts are clear, **tool-calling agents in LangGraph become much easier to understand**.
+
+A natural next step is to study **`ToolNode` in depth**, including its execution behavior, multiple tool calls, tool errors, custom tool nodes, state injection, runtime/context access, and how tools interact with LangGraph's `Command` and `interrupt()` mechanisms.
