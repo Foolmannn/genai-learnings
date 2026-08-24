@@ -7,6 +7,34 @@ import uuid
 def generate_thread_id():
     return uuid.uuid4()
 
+
+def extract_text(content):
+    """
+    Extract plain text from LangChain message content.
+
+    Handles:
+        1. String content
+        2. List of dictionaries containing {'type': 'text', 'text': '...'}
+    """
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+
+        text = ""
+
+        for item in content:
+
+            if isinstance(item, dict):
+
+                if item.get("type") == "text":
+                    text += item.get("text", "")
+
+        return text
+
+    return ""
+
 def reset_chat():
     thread_id = generate_thread_id()
     st.session_state["thread_id"] = thread_id
@@ -100,7 +128,7 @@ if user_input:
 
                 # Stream ONLY assistant tokens
                 if isinstance(message_chunk, AIMessage):
-                    yield message_chunk.content
+                    yield extract_text(message_chunk.content)
 
         ai_message = st.write_stream(ai_only_stream())
 
