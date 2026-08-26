@@ -9,6 +9,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_core.tools import tool
 from dotenv import load_dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 import asyncio
 
@@ -19,38 +20,36 @@ llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
 
 # FOR MCP CLIENT / LIBRARY WE NEED THE ASYNCHRONOUS CODE. SO WE NEED TO CONVERT OUR SIMPLE TOOL BASED GRAPH TO THE ASYNC NATURE
 
-@tool
-def calculator(first_num: float, second_num: float, operation: str) -> dict:
-    """
-    Perform a basic arithmetic operation on two numbers.
-    Supported operations: add, sub, mul, div
-    """
-    try:
-        if operation == "add":
-            result = first_num + second_num
-        elif operation == "sub":
-            result = first_num - second_num
-        elif operation == "mul":
-            result = first_num * second_num
-        elif operation == "div":
-            if second_num == 0:
-                return {"error": "Division by zero is not allowed"}
-            result = first_num / second_num
-        else:
-            return {"error": f"Unsupported operation '{operation}'"}
-        
-        return {"first_num": first_num, "second_num": second_num, "operation": operation, "result": result}
-    except Exception as e:
-        return {"error": str(e)}
 
-tools = [ calculator]
-llm_with_tools = llm.bind_tools(tools)
+# MCP client for local FastMCP server
+client = MultiServerMCPClient(
+    {
+        "arith": {
+            "transport": "stdio",
+            "command": "python3",          
+            "args": ["/Users/nitish/Desktop/mcp-math-server/main.py"],
+        },
+        "expense": {
+            "transport": "streamable_http",  # if this fails, try "sse"
+            "url": "https://splendid-gold-dingo.fastmcp.app/mcp"
+        }
+    }
+)
+
+
+
 
 
 class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
-def build_graph():
+async def build_graph():
+
+    tools = await client.get_tools()
+    print(tools)
+
+    llm_with_tools = llm.bind_tools(tools)
+
     async def chat_node(state: ChatState):
         messages = state["messages"]
         response = await llm_with_tools.ainvoke(messages)
@@ -75,7 +74,7 @@ def build_graph():
 
 async def main():
 
-    chatbot = build_graph()
+    chatbot = await build_graph()
     userInput="Find the modulus of 100123123 and 23 . Then give the answer like an commentator ."
 
 
