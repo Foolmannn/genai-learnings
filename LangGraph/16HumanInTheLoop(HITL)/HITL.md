@@ -406,3 +406,718 @@ interrupt(...)
 and pauses.
 
 ---
+
+# 9. What does the application receive?
+
+The application can inspect the interrupted state.
+
+A useful way is:
+
+```python
+state = graph.get_state(config)
+
+print(state)
+```
+
+You can inspect the interrupts:
+
+```python
+print(state.interrupts)
+```
+
+Conceptually you'll get information similar to:
+
+```text
+Interrupt(
+    value={
+        "question": "Should we continue for Suman?"
+    }
+)
+```
+
+Your frontend can then display:
+
+```text
+┌─────────────────────────────────┐
+│ Human Approval Required         │
+│                                 │
+│ Should we continue for Suman?   │
+│                                 │
+│ [ Approve ]      [ Reject ]     │
+└─────────────────────────────────┘
+```
+
+---
+
+# 10. Resuming the graph
+
+Suppose the human clicks:
+
+```text
+Approve
+```
+
+The application resumes the graph using:
+
+```python
+graph.invoke(
+    Command(resume=True),
+    config
+)
+```
+
+The value:
+
+```python
+True
+```
+
+is returned from:
+
+```python
+interrupt(...)
+```
+
+Therefore:
+
+```python
+decision = interrupt(...)
+```
+
+becomes:
+
+```python
+decision = True
+```
+
+and the node returns:
+
+```python
+{
+    "approved": True
+}
+```
+
+---
+
+# 11. Rejecting
+
+If the human clicks Reject:
+
+```python
+graph.invoke(
+    Command(resume=False),
+    config
+)
+```
+
+Then:
+
+```python
+decision = False
+```
+
+and:
+
+```python
+{
+    "approved": False
+}
+```
+
+---
+
+# 12. Very important concept: `interrupt()` is not normal input()
+
+This distinction is extremely important.
+
+You might initially think:
+
+```python
+interrupt()
+```
+
+is equivalent to:
+
+```python
+input()
+```
+
+It isn't.
+
+### Python `input()`
+
+```python
+name = input("Enter your name:")
+```
+
+blocks the Python process.
+
+The process waits.
+
+---
+
+### LangGraph `interrupt()`
+
+```python
+name = interrupt("Enter your name")
+```
+
+pauses the **graph execution** and allows the application to handle the interruption.
+
+This is much more suitable for:
+
+* Web applications
+* APIs
+* Streamlit
+* React frontends
+* Long-running agents
+* Distributed systems
+
+---
+
+# 13. HITL with conditional routing
+
+Now let's build something more realistic.
+
+Suppose our agent decides whether an action is dangerous.
+
+```text
+START
+  ↓
+Analyze
+  ↓
+Dangerous?
+ ↙       ↘
+No       Yes
+ ↓        ↓
+Execute  Human Approval
+          ↓
+       Approved?
+        ↙    ↘
+      Yes     No
+       ↓       ↓
+    Execute   Reject
+```
+
+State:
+
+```python
+class State(TypedDict):
+    action: str
+    requires_approval: bool
+    approved: bool
+```
+
+Analysis node:
+
+```python
+def analyze(state):
+
+    dangerous_actions = [
+        "delete_database",
+        "send_money",
+        "delete_user"
+    ]
+
+    return {
+        "requires_approval":
+            state["action"] in dangerous_actions
+    }
+```
+
+---
+
+# 14. Human approval node
+
+```python
+def human_approval(state):
+
+    decision = interrupt(
+        {
+            "type": "approval",
+            "action": state["action"],
+            "message": "Do you approve this action?"
+        }
+    )
+
+    return {
+        "approved": decision
+    }
+```
+
+---
+
+# 15. Routing function
+
+```python
+def route_after_analysis(state):
+
+    if state["requires_approval"]:
+        return "human_approval"
+
+    return "execute"
+```
+
+And after approval:
+
+```python
+def route_after_approval(state):
+
+    if state["approved"]:
+        return "execute"
+
+    return "reject"
+```
+
+---
+
+# 16. Build the graph
+
+```python
+builder = StateGraph(State)
+
+builder.add_node("analyze", analyze)
+builder.add_node("human_approval", human_approval)
+builder.add_node("execute", execute)
+builder.add_node("reject", reject)
+
+builder.add_edge(START, "analyze")
+
+builder.add_conditional_edges(
+    "analyze",
+    route_after_analysis
+)
+
+builder.add_conditional_edges(
+    "human_approval",
+    route_after_approval
+)
+
+builder.add_edge("execute", END)
+builder.add_edge("reject", END)
+```
+
+Compile:
+
+```python
+graph = builder.compile(
+    checkpointer=InMemorySaver()
+)
+```
+
+---
+
+# 17. Why this architecture is powerful
+
+You can now create policies like:
+
+```text
+Action                         Approval
+------------------------------------------------
+Read document                  ❌
+Search web                    ❌
+Generate summary              ❌
+Send email                    ✅
+Delete record                 ✅
+Transfer money                ✅
+Publish article               ✅
+Modify production DB          ✅
+```
+
+The agent remains autonomous for low-risk operations.
+
+Humans intervene only when necessary.
+
+---
+
+# 18. HITL with an AI Agent
+
+This becomes much more interesting when an LLM is involved.
+
+Imagine:
+
+```text
+                    User
+                      ↓
+                 AI Agent
+                      ↓
+              Decide what to do
+                      ↓
+              ┌──────────────┐
+              │ Tool Call    │
+              └──────┬───────┘
+                     ↓
+               Dangerous?
+                ↙       ↘
+              No         Yes
+              ↓           ↓
+          Execute      INTERRUPT
+                          ↓
+                       Human
+                       ↙   ↘
+                    Approve Reject
+                      ↓      ↓
+                   Execute  Stop
+```
+
+This is one of the most useful production patterns for agentic AI.
+
+---
+
+# 19. HITL before a tool call
+
+Suppose we have:
+
+```python
+@tool
+def delete_file(filename: str):
+    ...
+```
+
+The agent wants to call:
+
+```python
+delete_file("important.pdf")
+```
+
+Instead of immediately executing the tool:
+
+```text
+Agent
+ ↓
+delete_file()
+ ↓
+DELETE
+```
+
+we can introduce:
+
+```text
+Agent
+ ↓
+Tool request
+ ↓
+Human approval
+ ↓
+Tool execution
+```
+
+This creates a **tool-level approval gate**.
+
+---
+
+# 20. Example
+
+Conceptually:
+
+```python
+def delete_file_node(state):
+
+    filename = state["filename"]
+
+    approval = interrupt({
+        "action": "delete_file",
+        "filename": filename,
+        "message": f"Delete {filename}?"
+    })
+
+    if not approval:
+        return {
+            "status": "cancelled"
+        }
+
+    delete_file(filename)
+
+    return {
+        "status": "deleted"
+    }
+```
+
+This is safer than allowing the LLM to directly execute destructive operations.
+
+---
+
+# 21. Human can modify the action
+
+HITL doesn't have to return only:
+
+```python
+True
+```
+
+You can return structured information.
+
+For example:
+
+```python
+approval = interrupt({
+    "action": "send_email",
+    "to": "john@example.com",
+    "subject": "Payment reminder",
+    "body": "Please make your payment."
+})
+```
+
+Human could respond:
+
+```python
+{
+    "approved": True,
+    "to": "jane@example.com"
+}
+```
+
+Then:
+
+```python
+approval["to"]
+```
+
+becomes:
+
+```text
+jane@example.com
+```
+
+So the human can **correct the AI's proposed action**.
+
+---
+
+# 22. Approval vs correction
+
+This gives us an important distinction.
+
+### Approval
+
+```text
+AI:
+Delete customer 123?
+
+Human:
+Yes
+```
+
+### Correction
+
+```text
+AI:
+Send $1000 to Account A?
+
+Human:
+No.
+
+Send $500 to Account B.
+```
+
+The second is more powerful because the human isn't merely a gatekeeper.
+
+They become a **supervisor/editor**.
+
+---
+
+# 23. HITL for RAG
+
+HITL can also be used in your RAG systems.
+
+For example:
+
+```text
+User Question
+      ↓
+Retriever
+      ↓
+Retrieved Documents
+      ↓
+LLM
+      ↓
+Confidence low?
+   ↙          ↘
+ No           Yes
+ ↓             ↓
+Answer       Human Review
+               ↓
+            Correct answer
+```
+
+Suppose the RAG system retrieves:
+
+```text
+Document A
+Document B
+Document C
+```
+
+but the model isn't confident.
+
+Instead of hallucinating:
+
+```python
+if confidence < 0.7:
+    interrupt(...)
+```
+
+Human can review the retrieved context.
+
+---
+
+# 24. HITL for RAG feedback
+
+A better architecture is:
+
+```text
+             User
+               ↓
+             RAG
+               ↓
+             Answer
+               ↓
+          Human Review
+          ↙          ↘
+      Correct        Wrong
+        ↓              ↓
+    Return answer   Modify answer
+                       ↓
+                   Return answer
+```
+
+The human feedback can also become training/evaluation data.
+
+---
+
+# 25. HITL for customer-support agents
+
+This is a classic use case.
+
+```text
+Customer
+   ↓
+Support Agent
+   ↓
+Understand problem
+   ↓
+Can resolve automatically?
+    ↙          ↘
+   Yes          No
+    ↓            ↓
+Resolve       Human
+                ↓
+          Support Agent
+                ↓
+             Resolve
+```
+
+For example:
+
+### Low risk
+
+```text
+"What are your business hours?"
+```
+
+AI answers automatically.
+
+### High risk
+
+```text
+"I want a refund of $500."
+```
+
+Human approval may be required.
+
+---
+
+# 26. HITL + LangGraph persistence
+
+This is one of the most important concepts.
+
+Imagine:
+
+```text
+Monday 10:00 AM
+
+Agent:
+I need your approval.
+
+Human:
+```
+
+The human doesn't respond until:
+
+```text
+Monday 3:00 PM
+```
+
+Your application shouldn't need to keep the Python function running for five hours.
+
+Instead:
+
+```text
+10:00 AM
+Agent
+ ↓
+interrupt()
+ ↓
+Checkpoint saved
+ ↓
+Execution ends
+```
+
+Later:
+
+```text
+3:00 PM
+Human responds
+ ↓
+Command(resume=...)
+ ↓
+Checkpoint restored
+ ↓
+Graph continues
+```
+
+This is why **checkpointers are fundamental to practical HITL systems**.
+
+---
+
+# 27. Thread IDs
+
+The `thread_id` is extremely important.
+
+For example:
+
+```python
+config = {
+    "configurable": {
+        "thread_id": "conversation-123"
+    }
+}
+```
+
+Suppose you have:
+
+```text
+User A → thread-001
+User B → thread-002
+User C → thread-003
+```
+
+Each conversation has independent graph state.
+
+```text
+thread-001
+   ↓
+Agent state
+   ↓
+Human approval
+
+thread-002
+   ↓
+Agent state
+   ↓
+Human approval
+```
+
+Without proper thread identification, you could resume the wrong workflow.
+
+---
