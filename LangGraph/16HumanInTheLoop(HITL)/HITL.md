@@ -1121,3 +1121,684 @@ Human approval
 Without proper thread identification, you could resume the wrong workflow.
 
 ---
+
+# 28. HITL in a web application
+
+Suppose you're building:
+
+```text
+React / Next.js
+       ↓
+FastAPI
+       ↓
+LangGraph
+       ↓
+LLM
+```
+
+The workflow might be:
+
+```text
+React
+ ↓
+POST /chat
+ ↓
+LangGraph
+ ↓
+interrupt()
+ ↓
+API returns
+"approval_required"
+ ↓
+React displays approval UI
+```
+
+For example:
+
+```text
+┌───────────────────────────────────────┐
+│ AI wants to perform an action         │
+│                                       │
+│ Action: Delete user account           │
+│ User: 12345                           │
+│                                       │
+│ [ Approve ]           [ Reject ]      │
+└───────────────────────────────────────┘
+```
+
+When the user clicks:
+
+```text
+Approve
+```
+
+React sends:
+
+```text
+POST /resume
+```
+
+with:
+
+```text
+thread_id
+decision
+```
+
+Backend:
+
+```python
+graph.invoke(
+    Command(resume=True),
+    config
+)
+```
+
+---
+
+# 29. HITL with Streamlit
+
+Since Streamlit is useful for quickly prototyping AI systems, HITL works nicely conceptually there.
+
+You can have:
+
+```python
+if approval_required:
+
+    st.warning("Human approval required")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Approve"):
+            # resume graph
+            ...
+
+    with col2:
+        if st.button("Reject"):
+            # resume graph
+            ...
+```
+
+The important part is that the graph state is persisted using a checkpointer.
+
+---
+
+# 30. HITL with multiple humans
+
+You can even design:
+
+```text
+Agent
+ ↓
+Manager approval
+ ↓
+Security approval
+ ↓
+Finance approval
+ ↓
+Execute
+```
+
+For example:
+
+```text
+Transfer $100,000
+       ↓
+Finance Manager
+       ↓
+Security Officer
+       ↓
+CEO
+       ↓
+Execute
+```
+
+LangGraph's graph structure makes this possible.
+
+---
+
+# 31. Multi-level approval
+
+You can implement rules like:
+
+```text
+Amount < $100
+    → Automatic
+
+$100 - $1,000
+    → Manager
+
+$1,000 - $10,000
+    → Finance
+
+> $10,000
+    → CEO
+```
+
+Graph:
+
+```text
+                   Transaction
+                       ↓
+                    Analyze
+                       ↓
+             ┌─────────┴─────────┐
+             ↓                   ↓
+          < $100              >= $100
+             ↓                   ↓
+          Execute          Determine level
+                                ↓
+                   ┌────────────┼────────────┐
+                   ↓            ↓            ↓
+                Manager       Finance        CEO
+                   ↓            ↓            ↓
+                   └────────────┼────────────┘
+                                ↓
+                             Execute
+```
+
+---
+
+# 32. HITL and Agent Safety
+
+HITL is particularly valuable for **high-impact actions**.
+
+You can divide tools into categories:
+
+### Read-only
+
+```text
+search()
+retrieve()
+get_weather()
+get_user()
+```
+
+Usually safe.
+
+### Write operations
+
+```text
+update_user()
+create_invoice()
+send_email()
+```
+
+Potentially require approval.
+
+### Destructive operations
+
+```text
+delete_user()
+delete_database()
+transfer_money()
+```
+
+Strongly consider mandatory approval.
+
+---
+
+# 33. A useful production pattern
+
+A strong architecture is:
+
+```text
+                     Agent
+                       ↓
+                  Tool request
+                       ↓
+                Risk assessment
+                       ↓
+            ┌──────────┴──────────┐
+            ↓                     ↓
+        Low Risk              High Risk
+            ↓                     ↓
+      Execute directly        INTERRUPT
+                                  ↓
+                              Human
+                             ↙      ↘
+                        Approve      Reject
+                           ↓            ↓
+                       Execute         Stop
+```
+
+This gives you:
+
+**Autonomy + Safety**
+
+rather than:
+
+**Full autonomy** or **fully manual workflow**.
+
+---
+
+# 34. `interrupt()` and state updates
+
+A subtle but important concept is that you should think carefully about **where the interrupt occurs**.
+
+For example:
+
+```python
+def node(state):
+
+    result = expensive_operation()
+
+    approval = interrupt(...)
+
+    return {
+        "result": result
+    }
+```
+
+When the graph resumes, the node execution semantics matter: the interrupted node is re-entered from the beginning rather than simply continuing from the exact Python line like a debugger breakpoint.
+
+Therefore, avoid putting non-idempotent side effects before an interrupt unless they are designed safely.
+
+For example, be careful with:
+
+```python
+def node(state):
+
+    send_money()        # dangerous side effect
+
+    approval = interrupt(...)
+```
+
+A safer design is:
+
+```python
+def node(state):
+
+    approval = interrupt(...)
+
+    if approval:
+        send_money()
+
+    return {}
+```
+
+This is a **very important LangGraph HITL design principle**.
+
+---
+
+# 35. Idempotency
+
+Suppose:
+
+```python
+def execute_payment():
+    payment_api.charge(...)
+```
+
+If a node can be re-entered after an interrupt or retry, you don't want:
+
+```text
+$100 charged
+$100 charged again
+```
+
+Instead use an idempotency key:
+
+```python
+payment_id = state["payment_id"]
+
+charge(
+    amount=100,
+    idempotency_key=payment_id
+)
+```
+
+Then repeated execution can safely result in the same logical operation.
+
+---
+
+# 36. HITL is not just an approval button
+
+This is worth remembering.
+
+HITL can mean:
+
+```text
+Human approval
+Human rejection
+Human correction
+Human input
+Human selection
+Human editing
+Human escalation
+Human verification
+Human feedback
+```
+
+For example:
+
+```python
+interrupt({
+    "type": "review",
+    "draft": generated_text,
+    "instructions": "Edit the draft if necessary."
+})
+```
+
+The human can return:
+
+```python
+{
+    "approved": True,
+    "edited_text": "..."
+}
+```
+
+---
+
+# 37. HITL vs Human-in-the-Loop vs Human-on-the-Loop
+
+These concepts are related but different.
+
+### Human-in-the-loop
+
+Human participates directly in the workflow.
+
+```text
+AI → Human → AI
+```
+
+Example:
+
+> Approve this transaction.
+
+---
+
+### Human-on-the-loop
+
+AI operates autonomously, while humans monitor it.
+
+```text
+AI
+ ↓
+AI
+ ↓
+AI
+ ↓
+Human monitors
+```
+
+Human intervention occurs only when necessary.
+
+---
+
+### Human-out-of-the-loop
+
+Fully autonomous.
+
+```text
+AI → Action
+```
+
+No human intervention.
+
+---
+
+# 38. HITL vs traditional workflow
+
+Traditional workflow:
+
+```text
+User
+ ↓
+Form
+ ↓
+Human
+ ↓
+Database
+```
+
+Agentic HITL:
+
+```text
+User
+ ↓
+AI Agent
+ ↓
+Reasoning
+ ↓
+Tool selection
+ ↓
+Human approval
+ ↓
+Tool execution
+ ↓
+Result
+```
+
+The difference is that AI can perform the **planning and reasoning**, while humans retain control over important decisions.
+
+---
+
+# 39. HITL with LangGraph + LangSmith
+
+For production systems, it is useful to observe:
+
+```text
+User request
+     ↓
+Agent
+     ↓
+Tool selection
+     ↓
+Human approval
+     ↓
+Tool execution
+```
+
+You want visibility into:
+
+* Which node ran
+* Why an interrupt happened
+* What the agent proposed
+* What the human approved
+* What the human rejected
+* What tools were executed
+* How long the workflow paused
+* Whether the agent made repeated attempts
+
+This is where **LangSmith observability/tracing** becomes valuable alongside LangGraph.
+
+---
+
+# 40. HITL mental model
+
+The easiest way to remember it is:
+
+```text
+             ┌───────────────┐
+             │     User      │
+             └───────┬───────┘
+                     ↓
+             ┌───────────────┐
+             │   LangGraph   │
+             │     Agent     │
+             └───────┬───────┘
+                     ↓
+                Make decision
+                     ↓
+             ┌───────────────┐
+             │ Risk / Policy │
+             └───────┬───────┘
+                     ↓
+             ┌───────┴───────┐
+             ↓               ↓
+          Safe            Sensitive
+           ↓                 ↓
+        Execute          INTERRUPT
+                             ↓
+                          Human
+                         ↙     ↘
+                    Approve    Reject
+                       ↓          ↓
+                    Execute     Stop
+```
+
+---
+
+# 41. How HITL fits into what you're learning
+
+Given the LangGraph concepts you've been working through, I'd place HITL here:
+
+```text
+LangChain
+   │
+   ├── Models
+   ├── Prompts
+   ├── Tools
+   ├── Structured Output
+   │
+   ↓
+LangGraph
+   │
+   ├── State
+   ├── Nodes
+   ├── Edges
+   ├── Conditional Edges
+   ├── Parallel Workflows
+   ├── Iterative Workflows
+   ├── Persistence
+   ├── Checkpointing
+   ├── Interrupts / HITL       ← YOU ARE HERE
+   ├── Tool Calling
+   ├── Subgraphs
+   └── MCP
+   │
+   ↓
+LangSmith
+   ├── Tracing
+   ├── Evaluation
+   ├── Monitoring
+   └── Debugging
+```
+
+The key relationship is:
+
+> **Persistence + Checkpointing + Interrupts = practical HITL workflows in LangGraph.**
+
+---
+
+# 42. A project you should build
+
+For your AI/ML portfolio, I'd recommend building an:
+
+## **AI Financial Action Agent with Human Approval**
+
+Architecture:
+
+```text
+                 User
+                  ↓
+              React UI
+                  ↓
+               FastAPI
+                  ↓
+             LangGraph
+                  ↓
+              AI Agent
+                  ↓
+        ┌─────────┼──────────┐
+        ↓         ↓          ↓
+      Search    Database   Calculator
+                             
+                  ↓
+             Risk Checker
+                  ↓
+       ┌──────────┴──────────┐
+       ↓                     ↓
+   Safe action          Dangerous action
+       ↓                     ↓
+    Execute              INTERRUPT
+                              ↓
+                         User Approval
+                         ↙          ↘
+                     Approve       Reject
+                        ↓             ↓
+                     Execute        Stop
+```
+
+Example:
+
+> "Transfer ₹50,000 to Ram."
+
+Agent:
+
+```text
+Action detected:
+Transfer ₹50,000
+
+Risk: HIGH
+
+Human approval required.
+```
+
+UI:
+
+```text
+┌────────────────────────────────────────┐
+│       ⚠️ Approval Required             │
+│                                        │
+│ Action: Transfer Money                 │
+│ Amount: ₹50,000                        │
+│ Recipient: Ram                         │
+│                                        │
+│       [ Approve ]   [ Reject ]         │
+└────────────────────────────────────────┘
+```
+
+Then the LangGraph resumes using:
+
+```python
+Command(resume=True)
+```
+
+This single project can demonstrate:
+
+**LangGraph + Agents + Tool Calling + Persistence + HITL + FastAPI + React + LangSmith**
+
+which is considerably stronger for a portfolio than a simple chatbot.
+
+---
+
+## The 6 things you should remember
+
+If you're studying HITL for LangGraph, remember these six concepts:
+
+1. **`interrupt()`** → pauses graph execution and requests external input.
+2. **`Command(resume=...)`** → resumes an interrupted graph.
+3. **Checkpointer** → persists graph state across the pause/resume lifecycle.
+4. **`thread_id`** → identifies the specific workflow/conversation being resumed.
+5. **Human input can be more than True/False** → humans can edit, correct, or provide data.
+6. **Place interrupts before side effects** → design nodes carefully because interrupted nodes can be re-entered when resumed.
+
+The core pattern is simply:
+
+```python
+def human_review(state):
+
+    decision = interrupt({
+        "message": "Approve this action?"
+    })
+
+    if decision:
+        return {"approved": True}
+
+    return {"approved": False}
+```
+
+followed by:
+
+```python
+graph.invoke(
+    Command(resume=True),
+    config
+)
+```
+
+That is the fundamental building block from which you can construct much more sophisticated **human-supervised AI agents**.
