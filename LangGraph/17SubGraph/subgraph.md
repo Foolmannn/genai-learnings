@@ -78,7 +78,7 @@ and use it as a single component.
 
 ---
 
-# 2. Subgraph = Graph inside a Graph
+# 2. Subgraph = Graph inside a **Graph**
 
 Suppose our parent graph is:
 
