@@ -521,3 +521,505 @@ answer
 This separation is a major advantage of subgraphs.
 
 ---
+
+# 10. Example RAG subgraph
+
+```python
+from typing import TypedDict
+from langgraph.graph import StateGraph, START, END
+
+
+class RAGState(TypedDict):
+    question: str
+    documents: list[str]
+    context: str
+
+
+def retrieve(state: RAGState):
+    question = state["question"]
+
+    documents = [
+        "LangGraph is a framework for building stateful agents.",
+        "LangGraph supports persistence and human-in-the-loop."
+    ]
+
+    return {
+        "documents": documents
+    }
+
+
+def create_context(state: RAGState):
+
+    context = "\n".join(state["documents"])
+
+    return {
+        "context": context
+    }
+
+
+rag_builder = StateGraph(RAGState)
+
+rag_builder.add_node("retrieve", retrieve)
+rag_builder.add_node("create_context", create_context)
+
+rag_builder.add_edge(START, "retrieve")
+rag_builder.add_edge("retrieve", "create_context")
+rag_builder.add_edge("create_context", END)
+
+rag_subgraph = rag_builder.compile()
+```
+
+Now we have:
+
+```text
+rag_subgraph
+
+START
+  ↓
+retrieve
+  ↓
+create_context
+  ↓
+ END
+```
+
+---
+
+# 11. Parent graph
+
+Now imagine:
+
+```python
+class AgentState(TypedDict):
+    question: str
+    context: str
+    answer: str
+```
+
+We can make a wrapper function around the subgraph:
+
+```python
+def run_rag(state: AgentState):
+
+    result = rag_subgraph.invoke({
+        "question": state["question"],
+        "documents": [],
+        "context": ""
+    })
+
+    return {
+        "context": result["context"]
+    }
+```
+
+Then:
+
+```python
+parent_builder = StateGraph(AgentState)
+
+parent_builder.add_node("rag", run_rag)
+
+parent_builder.add_edge(START, "rag")
+parent_builder.add_edge("rag", END)
+
+parent_graph = parent_builder.compile()
+```
+
+Architecture:
+
+```text
+                 Parent Graph
+                     
+                    START
+                      ↓
+                  ┌───────┐
+                  │  RAG  │
+                  └───┬───┘
+                      │
+            ┌─────────┴─────────┐
+            │                   │
+            ↓                   │
+       retrieve                │
+            ↓                   │
+      create_context            │
+            ↓                   │
+            └───────────────────┘
+                      ↓
+                     END
+```
+
+---
+
+# 12. Why use a wrapper function?
+
+When schemas are different, a wrapper is useful.
+
+For example:
+
+```python
+def run_rag(state: AgentState):
+
+    result = rag_subgraph.invoke({
+        "question": state["question"],
+        "documents": [],
+        "context": ""
+    })
+
+    return {
+        "context": result["context"]
+    }
+```
+
+This performs **state transformation**.
+
+```text
+Parent State
+     │
+     │ transform
+     ↓
+Child State
+     │
+     ↓
+Subgraph
+     │
+     │ transform
+     ↓
+Parent State
+```
+
+This gives you strong boundaries between components.
+
+---
+
+# 13. Subgraphs with shared state
+
+There is another approach where parent and child share state keys.
+
+For example:
+
+```python
+class State(TypedDict):
+    question: str
+    documents: list[str]
+    answer: str
+```
+
+The subgraph can directly update:
+
+```python
+documents
+```
+
+and the parent can continue using it.
+
+Architecture:
+
+```text
+Parent State
+────────────────
+question
+documents
+answer
+────────────────
+       ↓
+    Subgraph
+       ↓
+────────────────
+question
+documents ← updated
+answer
+────────────────
+```
+
+This is convenient when the parent and child naturally operate on the same state.
+
+---
+
+# 14. Subgraph as a reusable component
+
+One of the biggest advantages is **reusability**.
+
+Suppose you build:
+
+```text
+web_search_subgraph
+```
+
+You can use it in:
+
+```text
+Customer Support Agent
+Research Agent
+News Agent
+Coding Agent
+Personal Assistant
+```
+
+For example:
+
+```text
+              Web Search Subgraph
+                      │
+          ┌───────────┼───────────┐
+          ↓           ↓           ↓
+       Agent A      Agent B     Agent C
+```
+
+Instead of implementing search logic three times.
+
+---
+
+# 15. Subgraphs for multi-agent systems
+
+Subgraphs are particularly useful for multi-agent architectures.
+
+Imagine:
+
+```text
+                    Supervisor
+                        │
+          ┌─────────────┼─────────────┐
+          ↓             ↓             ↓
+     Researcher       Coder        Reviewer
+       Subgraph      Subgraph      Subgraph
+```
+
+Each agent can have its own graph.
+
+### Researcher
+
+```text
+START
+  ↓
+Search
+  ↓
+Analyze
+  ↓
+Summarize
+  ↓
+END
+```
+
+### Coder
+
+```text
+START
+  ↓
+Understand Task
+  ↓
+Write Code
+  ↓
+Test
+  ↓
+Fix
+  ↓
+END
+```
+
+### Reviewer
+
+```text
+START
+  ↓
+Review
+  ↓
+Identify Problems
+  ↓
+Approve / Reject
+  ↓
+END
+```
+
+The supervisor sees these as components.
+
+---
+
+# 16. Subgraphs vs normal nodes
+
+This distinction is important.
+
+A normal node:
+
+```python
+builder.add_node("search", search_function)
+```
+
+represents one operation.
+
+A subgraph:
+
+```python
+builder.add_node("research", research_subgraph)
+```
+
+represents an entire workflow.
+
+So:
+
+```text
+Node
+
+┌────────────┐
+│  Search    │
+└────────────┘
+```
+
+versus:
+
+```text
+Subgraph
+
+┌────────────────────────────┐
+│       Research             │
+│                            │
+│ Search → Analyze → Verify  │
+│                            │
+└────────────────────────────┘
+```
+
+A subgraph is basically a **composite node**.
+
+---
+
+# 17. Subgraphs vs functions
+
+You can think of the relationship like this:
+
+### Function
+
+```python
+result = calculate_tax(income)
+```
+
+The function hides its internal implementation.
+
+### Subgraph
+
+```python
+result = research_subgraph.invoke(...)
+```
+
+The subgraph hides its internal workflow.
+
+For example:
+
+```text
+research_subgraph
+```
+
+could internally contain:
+
+```text
+search
+  ↓
+filter
+  ↓
+rerank
+  ↓
+summarize
+```
+
+The parent doesn't need to care.
+
+---
+
+# 18. Nested subgraphs
+
+Subgraphs can themselves contain subgraphs.
+
+For example:
+
+```text
+Main Graph
+    │
+    └── Agent Subgraph
+           │
+           ├── RAG Subgraph
+           │      ├── Retrieve
+           │      └── Rerank
+           │
+           └── Tool Subgraph
+                  ├── Search
+                  └── API
+```
+
+You can therefore build a hierarchy:
+
+```text
+Application
+    ↓
+Agent Graph
+    ↓
+Specialized Subgraph
+    ↓
+Smaller Subgraph
+```
+
+This is similar to software architecture:
+
+```text
+Application
+    ↓
+Module
+    ↓
+Component
+    ↓
+Function
+```
+
+---
+
+# 19. Subgraphs and conditional routing
+
+Subgraphs become even more powerful when combined with conditional edges.
+
+For example:
+
+```text
+                  START
+                    ↓
+                Classifier
+                    ↓
+          ┌─────────┼─────────┐
+          ↓         ↓         ↓
+        RAG       Web       Code
+      Subgraph   Subgraph   Subgraph
+          │         │         │
+          └─────────┼─────────┘
+                    ↓
+                  Answer
+                    ↓
+                   END
+```
+
+Code conceptually:
+
+```python
+def route(state):
+
+    if state["type"] == "rag":
+        return "rag"
+
+    elif state["type"] == "web":
+        return "web"
+
+    return "code"
+```
+
+Then:
+
+```python
+builder.add_conditional_edges(
+    "classifier",
+    route,
+    {
+        "rag": "rag",
+        "web": "web",
+        "code": "code"
+    }
+)
+```
+
+Each destination can be a subgraph.
+
+---
