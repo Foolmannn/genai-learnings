@@ -489,3 +489,576 @@ The previous conversation tells us:
 Therefore the LLM needs conversation context.
 
 ---
+
+# 12. Short-Term Memory in LangGraph
+
+This becomes particularly relevant to the LangGraph topics you've been studying.
+
+LangGraph represents state explicitly.
+
+For example:
+
+```python
+from typing import TypedDict
+
+class State(TypedDict):
+    messages: list
+```
+
+The graph state can contain conversation messages.
+
+Conceptually:
+
+```text
+State
+┌─────────────────────┐
+│ messages             │
+│                     │
+│ HumanMessage        │
+│ AIMessage           │
+│ HumanMessage        │
+│ AIMessage            │
+└─────────────────────┘
+```
+
+LangGraph can persist this state using a **checkpointer**.
+
+This means conversation state can survive across graph invocations.
+
+---
+
+# 13. Thread-Based Memory
+
+A useful concept in conversational systems is a **thread/session**.
+
+For example:
+
+```text
+Thread A
+User → Suman
+User → Learning ML
+User → Studying LangGraph
+
+Thread B
+User → Another person
+User → Learning Java
+```
+
+Each thread has its own conversation state.
+
+Conceptually:
+
+```text
+             Memory
+                │
+       ┌────────┴────────┐
+       ▼                 ▼
+   Thread A           Thread B
+       │                 │
+   Messages          Messages
+```
+
+This prevents conversations from mixing with each other.
+
+---
+
+# 14. Limitations of Short-Term Memory
+
+This is where the need for long-term memory becomes clear.
+
+## Problem 1: Context window limitation
+
+Suppose a conversation becomes extremely long:
+
+```text
+Message 1
+Message 2
+Message 3
+...
+Message 10,000
+```
+
+You can't indefinitely send the entire history to the model.
+
+The context becomes:
+
+```text
+Too large
+   ↓
+Expensive
+   ↓
+Slow
+   ↓
+Potential context limit
+```
+
+---
+
+# 15. Problem 2: Cost
+
+Suppose every request sends:
+
+```text
+10,000 tokens of history
++
+1,000 tokens current question
+```
+
+You're repeatedly processing a huge amount of information.
+
+This increases token usage and therefore potentially increases cost.
+
+---
+
+# 16. Problem 3: Latency
+
+More tokens generally mean more processing.
+
+Therefore:
+
+```text
+Long history
+     ↓
+Large prompt
+     ↓
+More computation
+     ↓
+Higher latency
+```
+
+---
+
+# 17. Problem 4: Irrelevant Information
+
+Imagine:
+
+```text
+Conversation history:
+
+User's favorite food
+User's favorite movie
+User's previous coding problem
+User's vacation
+User's programming language
+User's favorite football team
+...
+```
+
+Then the user asks:
+
+```text
+How do I implement a binary search?
+```
+
+Most of that information is irrelevant.
+
+Sending everything is inefficient.
+
+We want:
+
+```text
+Current question
+      ↓
+Retrieve relevant memories
+      ↓
+LLM
+```
+
+rather than:
+
+```text
+Current question
+      +
+Entire history
+      ↓
+LLM
+```
+
+---
+
+# 18. Problem 5: Short-Term Memory Doesn't Truly Generalize Across Sessions
+
+Imagine:
+
+```text
+Monday:
+User: I prefer Python examples.
+
+Conversation ends.
+```
+
+Next week:
+
+```text
+New conversation:
+User: Explain decorators.
+```
+
+If the old conversation isn't available, the chatbot may not know:
+
+```text
+User prefers Python examples.
+```
+
+This is where long-term memory becomes valuable.
+
+---
+
+# 19. Why We Need Long-Term Memory
+
+Long-term memory allows an AI application to retain useful information **across conversations, sessions, or long periods of time**.
+
+Example:
+
+```text
+Conversation 1:
+User: I am a beginner in Python.
+
+Conversation 2:
+User: Explain decorators.
+
+AI:
+Since you're learning Python as a beginner,
+let's start with the basics...
+```
+
+The information from conversation 1 can influence conversation 2.
+
+---
+
+# 20. Short-Term vs Long-Term Memory
+
+| Feature         | Short-Term Memory             | Long-Term Memory                         |
+| --------------- | ----------------------------- | ---------------------------------------- |
+| Scope           | Current conversation          | Across conversations                     |
+| Typical storage | Conversation state            | Database/vector store                    |
+| Duration        | Session/thread                | Persistent                               |
+| Data            | Recent messages               | Important facts/experiences              |
+| Main purpose    | Maintain conversation context | Personalization & knowledge              |
+| Example         | "What did I just say?"        | "What programming language do I prefer?" |
+
+---
+
+# 21. Types of Long-Term Memory
+
+A particularly important classification is:
+
+1. **Episodic memory**
+2. **Semantic memory**
+3. **Procedural memory**
+
+Let's understand each carefully.
+
+---
+
+# 22. Episodic Memory
+
+Episodic memory stores **events or experiences**.
+
+Think:
+
+> "What happened?"
+
+Example:
+
+```text
+User discussed a machine learning project
+on August 20.
+```
+
+Or:
+
+```text
+User previously asked how to deploy
+a LangGraph application.
+```
+
+It represents experiences/events.
+
+### Example
+
+```text
+Episode:
+User asked about Lasso Regression.
+Assistant explained sparsity.
+```
+
+Later:
+
+```text
+User:
+Continue what we discussed about Lasso.
+```
+
+The system can retrieve the previous episode.
+
+---
+
+# 23. Semantic Memory
+
+Semantic memory stores **facts and knowledge**.
+
+Think:
+
+> "What do I know?"
+
+Example:
+
+```text
+User prefers Python.
+User is learning LangGraph.
+User uses React.
+User is working on an expense tracker.
+```
+
+These are facts rather than complete conversations.
+
+---
+
+# 24. Episodic vs Semantic
+
+### Episodic
+
+```text
+On Monday, user asked about Lasso Regression.
+```
+
+### Semantic
+
+```text
+User is learning Machine Learning.
+```
+
+The difference:
+
+```text
+Episodic → Event / experience
+Semantic → Fact / knowledge
+```
+
+---
+
+# 25. Procedural Memory
+
+Procedural memory represents **how something should be done**.
+
+Think:
+
+> "How do I perform this task?"
+
+Examples:
+
+```text
+How should the agent respond?
+How should a workflow be executed?
+What steps should be followed?
+What tool should be used?
+```
+
+For an AI agent:
+
+```text
+When user asks for weather:
+    call weather tool
+
+When user asks about documents:
+    use RAG tool
+```
+
+That behavior can be thought of as procedural knowledge.
+
+---
+
+# 26. The Three Types Together
+
+```text
+             Long-Term Memory
+                    │
+       ┌────────────┼────────────┐
+       ▼            ▼            ▼
+   Episodic      Semantic     Procedural
+       │            │            │
+   What          What          How
+   happened?     is known?     to do?
+```
+
+Example for a coding assistant:
+
+### Episodic
+
+```text
+User previously debugged a Next.js application.
+```
+
+### Semantic
+
+```text
+User uses TypeScript.
+```
+
+### Procedural
+
+```text
+When debugging code:
+1. identify error
+2. inspect stack trace
+3. isolate cause
+4. propose fix
+```
+
+---
+
+# 27. How Long-Term Memory Works — High-Level Architecture
+
+A long-term memory system typically looks like:
+
+```text
+                   User
+                    │
+                    ▼
+                 Request
+                    │
+                    ▼
+           ┌─────────────────┐
+           │ Memory Retrieval│
+           └────────┬────────┘
+                    │
+                    ▼
+             Relevant Memories
+                    │
+                    ▼
+              ┌────────────┐
+              │     LLM    │
+              └─────┬──────┘
+                    │
+                    ▼
+                 Response
+                    │
+                    ▼
+             Memory Extraction
+                    │
+                    ▼
+              Memory Storage
+```
+
+This is extremely important.
+
+---
+
+# 28. Memory Retrieval
+
+Suppose the database contains:
+
+```text
+Memory 1:
+User prefers Python.
+
+Memory 2:
+User is learning React.
+
+Memory 3:
+User likes dark themes.
+
+Memory 4:
+User is studying regression.
+```
+
+User asks:
+
+```text
+Explain decorators.
+```
+
+A retrieval mechanism might identify:
+
+```text
+User prefers Python.
+```
+
+Then the prompt becomes:
+
+```text
+Relevant memory:
+User prefers Python.
+
+Question:
+Explain decorators.
+```
+
+The LLM can provide a personalized response.
+
+---
+
+# 29. Memory Storage
+
+After a conversation, the system may identify important information.
+
+Example:
+
+```text
+User:
+I'm building an expense tracker using React.
+```
+
+A memory extractor might produce:
+
+```text
+{
+    "type": "semantic",
+    "memory": "User is building an expense tracker using React."
+}
+```
+
+This can be stored.
+
+---
+
+# 30. Memory Extraction
+
+Not every conversation message should become memory.
+
+Consider:
+
+```text
+User:
+Hello.
+
+User:
+How are you?
+
+User:
+What is Python?
+```
+
+These aren't necessarily useful long-term memories.
+
+But:
+
+```text
+User:
+I'm building a production application using FastAPI.
+```
+
+could be useful.
+
+Therefore we need a memory extraction process.
+
+Conceptually:
+
+```text
+Conversation
+     │
+     ▼
+Memory Extraction
+     │
+     ├── Important?
+     │      │
+     │      ├── No → discard
+     │      │
+     │      └── Yes
+     │
+     ▼
+Store
+```
+
+---
