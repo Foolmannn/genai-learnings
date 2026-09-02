@@ -1027,3 +1027,542 @@ Supplement knowledge
 The original paper describes the evaluator as a lightweight component that returns a confidence degree and uses that to select retrieval actions. ([arXiv][1])
 
 ---
+
+# 26. A better CRAG architecture
+
+For a serious project, I'd implement:
+
+```text
+                         USER
+                           │
+                           ▼
+                     ┌───────────┐
+                     │   Query   │
+                     └─────┬─────┘
+                           │
+                           ▼
+                     ┌───────────┐
+                     │ Retrieve  │
+                     └─────┬─────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │ Retrieval Grader│
+                  └────────┬────────┘
+                           │
+             ┌─────────────┼─────────────┐
+             │             │             │
+             ▼             ▼             ▼
+          CORRECT       AMBIGUOUS     INCORRECT
+             │             │             │
+             ▼             │             │
+        Refine docs        │             │
+             │             │             │
+             │             ▼             ▼
+             │       Query Rewrite → Web Search
+             │                           │
+             │                           ▼
+             │                     Refine Web Docs
+             │                           │
+             └─────────────┬─────────────┘
+                           ▼
+                       GENERATE
+                           │
+                           ▼
+                     ANSWER
+```
+
+---
+
+# 27. Three-way grading
+
+Instead of:
+
+```python
+yes/no
+```
+
+you can use:
+
+```python
+class RetrievalGrade(BaseModel):
+
+    score: str = Field(
+        description="correct, ambiguous, or incorrect"
+    )
+
+    confidence: float = Field(
+        description="confidence from 0 to 1"
+    )
+```
+
+Then:
+
+```text
+score = correct
+confidence = 0.92
+```
+
+→ use local documents.
+
+Or:
+
+```text
+score = ambiguous
+confidence = 0.51
+```
+
+→ supplement with web search.
+
+Or:
+
+```text
+score = incorrect
+confidence = 0.94
+```
+
+→ rewrite + external retrieval.
+
+This more closely captures the idea behind the original CRAG framework.
+
+---
+
+# 28. Adding knowledge refinement
+
+You can create another node:
+
+```python
+def refine_documents(state):
+
+    question = state["question"]
+    documents = state["documents"]
+
+    refined = []
+
+    for doc in documents:
+
+        strips = doc.page_content.split("\n\n")
+
+        for strip in strips:
+
+            prompt = f"""
+            Question:
+            {question}
+
+            Knowledge:
+            {strip}
+
+            Is this knowledge useful for answering
+            the question?
+
+            Answer yes or no.
+            """
+
+            result = llm.invoke(prompt)
+
+            if result.content.lower().strip() == "yes":
+                refined.append(strip)
+
+    return {
+        "documents": [
+            Document(page_content=text)
+            for text in refined
+        ]
+    }
+```
+
+Then:
+
+```text
+Retrieve
+   ↓
+Grade
+   ↓
+Refine
+   ↓
+Generate
+```
+
+---
+
+# 29. Why LangGraph is particularly good for CRAG
+
+You could implement CRAG using normal Python:
+
+```python
+if relevant:
+    ...
+else:
+    ...
+```
+
+But LangGraph gives you explicit workflow control.
+
+For example:
+
+```python
+workflow.add_conditional_edges(
+    "grade_documents",
+    decide_next
+)
+```
+
+This gives you:
+
+### State
+
+```python
+CRAGState
+```
+
+### Nodes
+
+```text
+retrieve
+grade
+rewrite
+web_search
+refine
+generate
+```
+
+### Conditional edges
+
+```text
+relevant → generate
+irrelevant → rewrite
+```
+
+### Loops
+
+You can later implement:
+
+```text
+retrieve
+   ↓
+grade
+   ↓
+bad
+   ↓
+rewrite
+   ↓
+retrieve again
+   ↓
+grade
+```
+
+That's where LangGraph becomes much more powerful than a simple LangChain chain. LangChain's own self-reflective RAG material highlights state-machine-style workflows for decision points and retrieval retries. ([LangChain][2])
+
+---
+
+# 30. CRAG vs Self-RAG
+
+These two are often confused.
+
+## CRAG
+
+Main question:
+
+> **"Is my retrieved knowledge good?"**
+
+Architecture:
+
+```text
+Retrieve
+   ↓
+Evaluate retrieval
+   ↓
+Correct retrieval if needed
+   ↓
+Generate
+```
+
+## Self-RAG
+
+Main question:
+
+> **"Should I retrieve? Is this retrieved information useful? Is my generated answer supported?"**
+
+It introduces more explicit reflection around retrieval and generation.
+
+Conceptually:
+
+```text
+Question
+   ↓
+Should retrieve?
+   ↓
+Retrieve
+   ↓
+Is document useful?
+   ↓
+Generate
+   ↓
+Is answer supported?
+   ↓
+Final answer
+```
+
+LangChain's current RAG material includes both self-reflective RAG patterns and a custom LangGraph implementation showing document grading and query rewriting. ([LangChain AI][5])
+
+---
+
+# 31. CRAG vs Agentic RAG
+
+Another important distinction.
+
+### Basic RAG
+
+```text
+Retrieve → Generate
+```
+
+### CRAG
+
+```text
+Retrieve
+   ↓
+Evaluate
+   ↓
+Correct
+   ↓
+Generate
+```
+
+### Agentic RAG
+
+```text
+                    ┌──────────────┐
+                    │     Agent    │
+                    └──────┬───────┘
+                           │
+             ┌─────────────┼─────────────┐
+             ↓             ↓             ↓
+          Vector DB      Web Search     SQL
+             │             │             │
+             └─────────────┼─────────────┘
+                           ↓
+                        Answer
+```
+
+Agentic RAG gives the system more freedom to decide which tools to use.
+
+CRAG is more **workflow-oriented and deterministic**.
+
+---
+
+# 32. When should you use CRAG?
+
+CRAG is particularly useful when:
+
+### 1. Your vector database isn't perfect
+
+```text
+PDFs
+→ imperfect chunks
+→ semantic search
+→ noisy retrieval
+```
+
+### 2. Your knowledge base is limited
+
+If the answer isn't inside your documents, external search can help.
+
+### 3. Your data can become outdated
+
+For example:
+
+```text
+News
+Stock information
+Documentation
+Technology
+Sports
+Current events
+```
+
+### 4. Hallucination is expensive
+
+For:
+
+```text
+legal
+financial
+technical
+enterprise
+research
+```
+
+you often want retrieval validation.
+
+---
+
+# 33. When CRAG may be unnecessary
+
+Don't automatically use CRAG for every RAG application.
+
+If you have:
+
+```text
+small knowledge base
++
+high-quality retrieval
++
+stable documents
++
+simple questions
+```
+
+then:
+
+```text
+Retrieve → Generate
+```
+
+may be enough.
+
+CRAG introduces additional:
+
+* LLM calls
+* latency
+* implementation complexity
+* API cost
+
+So the architecture should match your problem.
+
+---
+
+# 34. Recommended architecture for your projects
+
+Given that you've been working with **LangGraph + RAG + PDF retrieval**, I'd recommend building your CRAG in stages.
+
+### Stage 1 — Basic RAG
+
+```text
+PDF
+ ↓
+Chunking
+ ↓
+Embeddings
+ ↓
+Vector DB
+ ↓
+Retriever
+ ↓
+LLM
+```
+
+### Stage 2 — Add document grading
+
+```text
+Retriever
+ ↓
+Document Grader
+ ↓
+Relevant docs
+ ↓
+LLM
+```
+
+### Stage 3 — Add corrective retrieval
+
+```text
+                   Retriever
+                       ↓
+                  Document Grader
+                       ↓
+             ┌─────────┴─────────┐
+             ↓                   ↓
+         Relevant             Irrelevant
+             ↓                   ↓
+         Generate            Rewrite
+                                 ↓
+                             Web Search
+                                 ↓
+                              Generate
+```
+
+### Stage 4 — Add knowledge refinement
+
+```text
+Retrieved documents
+       ↓
+Split into knowledge strips
+       ↓
+Grade strips
+       ↓
+Remove irrelevant information
+       ↓
+Generate
+```
+
+### Stage 5 — Add answer evaluation
+
+Then you can make it:
+
+```text
+                         Retrieve
+                            ↓
+                         Grade
+                            ↓
+                    ┌───────┴───────┐
+                    ↓               ↓
+                  Good             Bad
+                    ↓               ↓
+                  Refine          Rewrite
+                    ↓               ↓
+                    └───────┬───────┘
+                            ↓
+                         Generate
+                            ↓
+                     Answer Grader
+                            ↓
+                 ┌──────────┴──────────┐
+                 ↓                     ↓
+             Supported              Unsupported
+                 ↓                     ↓
+                END                 Retry RAG
+```
+
+That starts moving toward a **production-grade self-correcting RAG system**.
+
+---
+
+## The most important mental model
+
+Remember CRAG as:
+
+> **Retrieve → Check → Correct → Generate**
+
+Where:
+
+```text
+RETRIEVE
+   ↓
+"Do I have useful information?"
+   ↓
+CHECK
+   ↓
+ ┌───────────────┐
+ │               │
+Good            Bad
+ │               │
+ ↓               ↓
+Refine        Rewrite query
+ │               ↓
+ ↓           Web search
+ │               ↓
+ └───────→ Generate
+              ↓
+            Answer
+```
+
+The original CRAG research specifically combines retrieval evaluation, corrective retrieval actions, and knowledge refinement to make RAG more robust to poor retrieval. ([arXiv][1])
+
+For your **LangGraph learning path**, the most useful next step would be to implement the **full Python CRAG project from scratch** using **PDF → Chroma/FAISS → document grader → conditional LangGraph routing → query rewriting → Tavily web fallback → knowledge refinement → answer generation**, rather than just the simplified example above. LangChain's CRAG tutorial follows essentially this graph-oriented pattern, while explicitly noting that its first implementation simplifies the original paper's knowledge-refinement phase. ([LangChain][3])
+
+[1]: https://arxiv.org/abs/2401.15884?utm_source=chatgpt.com "Corrective Retrieval Augmented Generation"
+[2]: https://www.langchain.com/blog/agentic-rag-with-langgraph?utm_source=chatgpt.com "Self-Reflective RAG with LangGraph"
+[3]: https://langchain-ai.lang.chat/langgraphjs/tutorials/rag/langgraph_crag/?utm_source=chatgpt.com "Corrective RAG (CRAG)"
+[4]: https://blog.langchain.dev/agentic-rag-with-langgraph/?utm_source=chatgpt.com "Self-Reflective RAG with LangGraph"
+[5]: https://langchain-ai.github.io/langgraph/tutorials/rag/langgraph_self_rag/?h=self&utm_source=chatgpt.com "Build a custom RAG agent with LangGraph - Docs by LangChain"
