@@ -414,3 +414,616 @@ Generate
 This is one of CRAG's major advantages.
 
 ---
+
+# 10. Query rewriting
+
+Instead of sending the original question directly to web search:
+
+```text
+Who won the World Cup?
+```
+
+the system can transform it into something more retrieval-friendly:
+
+```text
+2026 FIFA World Cup winner
+```
+
+or:
+
+```text
+2026 FIFA World Cup final winner
+```
+
+A query rewriting node can be:
+
+```python
+def rewrite_query(state):
+    question = state["question"]
+
+    prompt = f"""
+    Rewrite the following question into a better search query.
+
+    Question:
+    {question}
+
+    Return only the rewritten query.
+    """
+
+    response = llm.invoke(prompt)
+
+    return {
+        "question": response.content
+    }
+```
+
+---
+
+# 11. External search
+
+After rewriting:
+
+```text
+Question
+   ↓
+Query Rewriter
+   ↓
+Better Search Query
+   ↓
+Web Search
+```
+
+For example, with Tavily:
+
+```python
+from langchain_tavily import TavilySearch
+
+web_search = TavilySearch(
+    max_results=3
+)
+```
+
+Then:
+
+```python
+results = web_search.invoke(query)
+```
+
+The LangChain CRAG example uses web search as the supplementary datasource when vector retrieval is insufficient. ([LangChain][3])
+
+---
+
+# 12. CRAG in LangGraph
+
+Now let's build the architecture.
+
+Our graph will look like:
+
+```text
+                         START
+                           │
+                           ▼
+                       RETRIEVE
+                           │
+                           ▼
+                    GRADE DOCUMENTS
+                           │
+                 ┌─────────┴──────────┐
+                 │                    │
+            Relevant?             Not useful
+                 │                    │
+                 ▼                    ▼
+          REFINE KNOWLEDGE      REWRITE QUERY
+                 │                    │
+                 │                    ▼
+                 │               WEB SEARCH
+                 │                    │
+                 └──────────┬─────────┘
+                            ▼
+                         GENERATE
+                            │
+                            ▼
+                           END
+```
+
+This is essentially the structure demonstrated by LangChain's CRAG/LangGraph examples, although their introductory implementation simplifies or omits some of the original knowledge-refinement machinery. ([LangChain][3])
+
+---
+
+# 13. Installing dependencies
+
+For a Python implementation:
+
+```bash
+pip install langgraph langchain langchain-openai langchain-community
+pip install langchain-tavily
+pip install chromadb
+```
+
+You'll need:
+
+```env
+OPENAI_API_KEY=your_key
+TAVILY_API_KEY=your_key
+```
+
+---
+
+# 14. Define the graph state
+
+Start with:
+
+```python
+from typing import TypedDict, List
+from langchain_core.documents import Document
+
+
+class CRAGState(TypedDict):
+    question: str
+    documents: List[Document]
+    generation: str
+    web_search: bool
+```
+
+Think of this as the shared memory of the graph.
+
+At the beginning:
+
+```python
+{
+    "question": "What is short-term memory in LangGraph?",
+    "documents": [],
+    "generation": "",
+    "web_search": False
+}
+```
+
+---
+
+# 15. Create the LLM
+
+```python
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="gpt-4.1-mini",
+    temperature=0
+)
+```
+
+For grading, `temperature=0` is useful because we want consistent decisions.
+
+---
+
+# 16. Retriever
+
+Assume you've already created:
+
+```python
+vectorstore
+```
+
+Then:
+
+```python
+retriever = vectorstore.as_retriever(
+    search_kwargs={"k": 4}
+)
+```
+
+Create the retrieval node:
+
+```python
+def retrieve(state: CRAGState):
+
+    question = state["question"]
+
+    documents = retriever.invoke(question)
+
+    return {
+        "documents": documents
+    }
+```
+
+---
+
+# 17. Document grader
+
+Create the schema:
+
+```python
+from pydantic import BaseModel, Field
+
+
+class GradeDocuments(BaseModel):
+
+    binary_score: str = Field(
+        description="Is the document relevant to the question? yes or no"
+    )
+```
+
+Create the grader:
+
+```python
+grader = llm.with_structured_output(GradeDocuments)
+```
+
+Now create the node:
+
+```python
+def grade_documents(state: CRAGState):
+
+    question = state["question"]
+    documents = state["documents"]
+
+    filtered_documents = []
+    relevant_count = 0
+
+    for document in documents:
+
+        prompt = f"""
+        You are a document relevance grader.
+
+        Question:
+        {question}
+
+        Document:
+        {document.page_content}
+
+        Determine whether the document contains information
+        useful for answering the question.
+
+        Return yes if relevant.
+        Return no if irrelevant.
+        """
+
+        result = grader.invoke(prompt)
+
+        if result.binary_score.lower() == "yes":
+            filtered_documents.append(document)
+            relevant_count += 1
+
+    web_search = relevant_count == 0
+
+    return {
+        "documents": filtered_documents,
+        "web_search": web_search
+    }
+```
+
+This is a simplified but very practical CRAG implementation.
+
+---
+
+# 18. Conditional routing
+
+Now we need to tell LangGraph:
+
+```text
+If documents are good
+       ↓
+    generate
+
+Otherwise
+       ↓
+  rewrite query
+```
+
+Create:
+
+```python
+def decide_next(state: CRAGState):
+
+    if state["web_search"]:
+        return "rewrite_query"
+
+    return "generate"
+```
+
+This function becomes a conditional edge.
+
+---
+
+# 19. Query rewriting node
+
+```python
+def rewrite_query(state: CRAGState):
+
+    question = state["question"]
+
+    prompt = f"""
+    Rewrite this question into a better search query.
+
+    Original question:
+    {question}
+
+    Produce a concise search query.
+    """
+
+    response = llm.invoke(prompt)
+
+    return {
+        "question": response.content
+    }
+```
+
+Example:
+
+```text
+Original:
+
+"What happened with the 2026 World Cup?"
+
+↓
+
+Rewritten:
+
+"2026 FIFA World Cup winner final"
+```
+
+---
+
+# 20. Web search node
+
+```python
+from langchain_tavily import TavilySearch
+
+web_search = TavilySearch(
+    max_results=3
+)
+```
+
+Node:
+
+```python
+def web_search_node(state: CRAGState):
+
+    question = state["question"]
+
+    results = web_search.invoke(question)
+
+    documents = []
+
+    for result in results["results"]:
+
+        documents.append(
+            Document(
+                page_content=result["content"],
+                metadata={
+                    "source": result["url"]
+                }
+            )
+        )
+
+    return {
+        "documents": documents
+    }
+```
+
+Now the graph has an external retrieval path.
+
+---
+
+# 21. Generation node
+
+The generator is basically standard RAG.
+
+```python
+def generate(state: CRAGState):
+
+    question = state["question"]
+    documents = state["documents"]
+
+    context = "\n\n".join(
+        document.page_content
+        for document in documents
+    )
+
+    prompt = f"""
+    Answer the question using the provided context.
+
+    Question:
+    {question}
+
+    Context:
+    {context}
+
+    If the context does not contain enough information,
+    say that you don't have enough information.
+
+    Answer clearly and accurately.
+    """
+
+    response = llm.invoke(prompt)
+
+    return {
+        "generation": response.content
+    }
+```
+
+---
+
+# 22. Build the LangGraph
+
+Now the interesting part.
+
+```python
+from langgraph.graph import StateGraph, START, END
+
+
+workflow = StateGraph(CRAGState)
+```
+
+Add nodes:
+
+```python
+workflow.add_node("retrieve", retrieve)
+workflow.add_node("grade_documents", grade_documents)
+workflow.add_node("rewrite_query", rewrite_query)
+workflow.add_node("web_search", web_search_node)
+workflow.add_node("generate", generate)
+```
+
+Connect:
+
+```python
+workflow.add_edge(
+    START,
+    "retrieve"
+)
+
+workflow.add_edge(
+    "retrieve",
+    "grade_documents"
+)
+```
+
+Conditional edge:
+
+```python
+workflow.add_conditional_edges(
+    "grade_documents",
+    decide_next,
+    {
+        "generate": "generate",
+        "rewrite_query": "rewrite_query"
+    }
+)
+```
+
+Then:
+
+```python
+workflow.add_edge(
+    "rewrite_query",
+    "web_search"
+)
+
+workflow.add_edge(
+    "web_search",
+    "generate"
+)
+
+workflow.add_edge(
+    "generate",
+    END
+)
+```
+
+Compile:
+
+```python
+app = workflow.compile()
+```
+
+---
+
+# 23. Complete graph
+
+The resulting graph is:
+
+```text
+                  ┌───────────┐
+                  │   START   │
+                  └─────┬─────┘
+                        │
+                        ▼
+                  ┌───────────┐
+                  │  RETRIEVE │
+                  └─────┬─────┘
+                        │
+                        ▼
+              ┌──────────────────┐
+              │ GRADE DOCUMENTS  │
+              └────────┬─────────┘
+                       │
+             ┌─────────┴─────────┐
+             │                   │
+             ▼                   ▼
+       relevant              irrelevant
+             │                   │
+             │                   ▼
+             │            ┌──────────────┐
+             │            │ REWRITE QUERY│
+             │            └──────┬───────┘
+             │                   │
+             │                   ▼
+             │            ┌──────────────┐
+             │            │ WEB SEARCH   │
+             │            └──────┬───────┘
+             │                   │
+             └──────────┬────────┘
+                        ▼
+                  ┌───────────┐
+                  │  GENERATE │
+                  └─────┬─────┘
+                        │
+                        ▼
+                     ┌─────┐
+                     │ END │
+                     └─────┘
+```
+
+---
+
+# 24. Invoke the graph
+
+```python
+result = app.invoke({
+    "question": "What is short-term memory in LangGraph?",
+    "documents": [],
+    "generation": "",
+    "web_search": False
+})
+```
+
+Then:
+
+```python
+print(result["generation"])
+```
+
+---
+
+# 25. But there's an important problem with this implementation
+
+The implementation above is a **simplified CRAG**.
+
+The original CRAG paper does more than:
+
+```text
+relevant → generate
+irrelevant → web search
+```
+
+It also introduces:
+
+### Retrieval evaluation
+
+```text
+How good is the retrieved knowledge?
+```
+
+### Knowledge refinement
+
+```text
+Break retrieved documents into knowledge strips
+↓
+Evaluate strips
+↓
+Keep useful information
+```
+
+### Web augmentation
+
+```text
+If local retrieval is insufficient
+↓
+External search
+↓
+Supplement knowledge
+```
+
+The original paper describes the evaluator as a lightweight component that returns a confidence degree and uses that to select retrieval actions. ([arXiv][1])
+
+---
