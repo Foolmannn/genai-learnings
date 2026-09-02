@@ -1561,8 +1561,3 @@ The original CRAG research specifically combines retrieval evaluation, correctiv
 
 For your **LangGraph learning path**, the most useful next step would be to implement the **full Python CRAG project from scratch** using **PDF → Chroma/FAISS → document grader → conditional LangGraph routing → query rewriting → Tavily web fallback → knowledge refinement → answer generation**, rather than just the simplified example above. LangChain's CRAG tutorial follows essentially this graph-oriented pattern, while explicitly noting that its first implementation simplifies the original paper's knowledge-refinement phase. ([LangChain][3])
 
-[1]: https://arxiv.org/abs/2401.15884?utm_source=chatgpt.com "Corrective Retrieval Augmented Generation"
-[2]: https://www.langchain.com/blog/agentic-rag-with-langgraph?utm_source=chatgpt.com "Self-Reflective RAG with LangGraph"
-[3]: https://langchain-ai.lang.chat/langgraphjs/tutorials/rag/langgraph_crag/?utm_source=chatgpt.com "Corrective RAG (CRAG)"
-[4]: https://blog.langchain.dev/agentic-rag-with-langgraph/?utm_source=chatgpt.com "Self-Reflective RAG with LangGraph"
-[5]: https://langchain-ai.github.io/langgraph/tutorials/rag/langgraph_self_rag/?h=self&utm_source=chatgpt.com "Build a custom RAG agent with LangGraph - Docs by LangChain"
