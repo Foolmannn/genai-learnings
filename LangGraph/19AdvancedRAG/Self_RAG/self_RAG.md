@@ -1053,3 +1053,879 @@ Answer quality check
 ```
 
 ---
+
+# 30. Complete Self-RAG Graph
+
+A stronger architecture:
+
+```text
+                      START
+                        │
+                        ▼
+                 ┌────────────┐
+                 │  Retrieve  │
+                 └─────┬──────┘
+                       ↓
+                ┌───────────────┐
+                │ Grade Docs    │
+                └───────┬───────┘
+                        │
+              ┌─────────┴─────────┐
+              │                   │
+         Relevant              Irrelevant
+              │                   │
+              ▼                   ▼
+          Generate           Rewrite Query
+              │                   │
+              ▼                   │
+        Grade Answer              │
+              │                   │
+       ┌──────┴───────┐            │
+       │              │            │
+   Supported      Unsupported      │
+       │              │            │
+       ▼              ▼            │
+  Grade Quality    Generate        │
+       │              │            │
+       │              └────────────┤
+       │                           │
+       ▼                           │
+      END ◄────────────────────────┘
+```
+
+---
+
+# 31. Add Answer Quality Grading
+
+Define:
+
+```python
+class GradeAnswer(BaseModel):
+
+    binary_score: str = Field(
+        description="yes if the answer properly answers the question, otherwise no"
+    )
+```
+
+Prompt:
+
+```python
+answer_prompt = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """
+        You are an answer quality grader.
+
+        Determine whether the answer correctly and adequately
+        addresses the user's question.
+
+        Return:
+        yes → useful and directly answers the question
+        no → incomplete, irrelevant, or incorrect
+        """
+    ),
+    (
+        "human",
+        """
+        Question:
+        {question}
+
+        Answer:
+        {generation}
+        """
+    )
+])
+```
+
+Chain:
+
+```python
+answer_chain = (
+    answer_prompt |
+    llm.with_structured_output(GradeAnswer)
+)
+```
+
+---
+
+# 32. Grade Answer Node
+
+```python
+def grade_answer(state: GraphState):
+
+    question = state["question"]
+    generation = state["generation"]
+
+    result = answer_chain.invoke({
+        "question": question,
+        "generation": generation
+    })
+
+    return result.binary_score
+```
+
+---
+
+# 33. Conditional Generation Routing
+
+We can now create:
+
+```python
+def decide_after_generation(state: GraphState):
+
+    documents = state["documents"]
+    generation = state["generation"]
+
+    context = "\n\n".join(
+        doc.page_content
+        for doc in documents
+    )
+
+    grounding = hallucination_chain.invoke({
+        "documents": context,
+        "generation": generation
+    })
+
+    if grounding.binary_score.lower() != "yes":
+        return "generate"
+
+    quality = answer_chain.invoke({
+        "question": state["question"],
+        "generation": generation
+    })
+
+    if quality.binary_score.lower() != "yes":
+        return "rewrite_query"
+
+    return "end"
+```
+
+Then:
+
+```python
+workflow.add_conditional_edges(
+    "generate",
+    decide_after_generation,
+    {
+        "generate": "generate",
+        "rewrite_query": "rewrite_query",
+        "end": END
+    }
+)
+```
+
+Now we have an actual feedback loop.
+
+---
+
+# 34. Why the Loop Matters
+
+Imagine:
+
+```text
+Question
+ ↓
+Retrieve
+ ↓
+Generate
+
+Answer:
+"Gradient descent always reaches the global minimum."
+```
+
+Grounding evaluator:
+
+```text
+❌ Unsupported
+```
+
+Then:
+
+```text
+Generate again
+```
+
+or:
+
+```text
+Rewrite query
+ ↓
+Retrieve
+ ↓
+Generate
+```
+
+The system has a chance to correct itself.
+
+---
+
+# 35. Important: Avoid Infinite Loops
+
+This is a very important production concern.
+
+Imagine:
+
+```text
+generate
+ ↓
+bad
+ ↓
+generate
+ ↓
+bad
+ ↓
+generate
+ ↓
+bad
+ ↓
+...
+```
+
+Your application could loop forever.
+
+So add:
+
+```python
+generation_attempts
+```
+
+to state.
+
+For example:
+
+```python
+class GraphState(TypedDict):
+
+    question: str
+    documents: List[Document]
+    generation: str
+    attempts: int
+```
+
+Then:
+
+```python
+def generate(state):
+
+    ...
+
+    return {
+        "generation": response.content,
+        "attempts": state["attempts"] + 1
+    }
+```
+
+And:
+
+```python
+def decide_after_generation(state):
+
+    if state["attempts"] >= 3:
+        return "end"
+
+    ...
+```
+
+Production systems should always have some form of **retry budget**.
+
+---
+
+# 36. Even Better: Add Retrieval Decision
+
+Our previous graph starts with retrieval.
+
+A more advanced Self-RAG starts with:
+
+```text
+Question
+   ↓
+Should retrieve?
+```
+
+For example:
+
+```python
+class RetrievalDecision(BaseModel):
+
+    binary_score: str = Field(
+        description="yes if external retrieval is necessary"
+    )
+```
+
+Prompt:
+
+```text
+Determine whether the question requires
+retrieving external knowledge.
+
+Question:
+{question}
+
+Return yes or no.
+```
+
+Then:
+
+```python
+def decide_retrieval(state):
+
+    result = retrieval_chain.invoke({
+        "question": state["question"]
+    })
+
+    if result.binary_score == "yes":
+        return "retrieve"
+
+    return "generate_direct"
+```
+
+Now:
+
+```text
+                         Query
+                           │
+                           ▼
+                    Need retrieval?
+                     /           \
+                   NO             YES
+                   │               │
+                   ▼               ▼
+             Direct Generate    Retrieve
+                                   ↓
+                              Grade Docs
+```
+
+This makes your system much more efficient.
+
+---
+
+# 37. Self-RAG vs CRAG
+
+Since you've already been learning CRAG, this distinction is very important.
+
+### CRAG
+
+Corrective RAG focuses heavily on:
+
+```text
+Retrieve
+   ↓
+Evaluate retrieval
+   ↓
+Correct retrieval
+```
+
+For example:
+
+```text
+Retriever
+   ↓
+Retriever evaluator
+   ↓
+Good?
+ /   \
+Yes   No
+ |     |
+ ↓     ↓
+LLM   Web Search
+```
+
+### Self-RAG
+
+Self-RAG goes further:
+
+```text
+Should retrieve?
+       ↓
+Retrieve
+       ↓
+Are documents relevant?
+       ↓
+Generate
+       ↓
+Is answer grounded?
+       ↓
+Is answer useful?
+```
+
+So:
+
+```text
+CRAG
+=
+Retrieval correction
+
+Self-RAG
+=
+Retrieval + generation self-reflection
+```
+
+---
+
+# 38. Traditional RAG vs CRAG vs Self-RAG
+
+| Architecture | Main idea                                  |
+| ------------ | ------------------------------------------ |
+| Naive RAG    | Retrieve → Generate                        |
+| Advanced RAG | Improve retrieval                          |
+| CRAG         | Evaluate and correct retrieval             |
+| Self-RAG     | Evaluate retrieval + generation            |
+| Agentic RAG  | Agent decides how/when to retrieve and act |
+
+A useful mental model:
+
+```text
+Naive RAG
+    ↓
+Better retrieval
+    ↓
+CRAG
+    ↓
+Self-RAG
+    ↓
+Agentic RAG
+```
+
+They're not necessarily strict evolutionary stages, but this is a useful way to understand their increasing control and feedback.
+
+---
+
+# 39. Where Self-RAG Fits in LangGraph
+
+LangGraph is particularly good at representing this:
+
+```text
+                 ┌──────────────┐
+                 │    START     │
+                 └──────┬───────┘
+                        ↓
+                 ┌──────────────┐
+                 │ Need Search? │
+                 └──────┬───────┘
+                    ┌───┴───┐
+                   NO       YES
+                   ↓         ↓
+               Generate   Retrieve
+                            ↓
+                         Grade
+                            ↓
+                    ┌───────┴──────┐
+                  Good            Bad
+                    ↓               ↓
+                 Generate        Rewrite
+                    ↓               │
+                  Grade             │
+                 Answer             │
+                    ↓               │
+               ┌────┴────┐          │
+             Good       Bad         │
+               ↓          ↓          │
+              END       Retry ◄──────┘
+```
+
+This is essentially a **state machine with feedback loops**.
+
+---
+
+# 40. Production-Level Self-RAG
+
+For a real application, I'd structure the graph like this:
+
+```text
+                       USER
+                        │
+                        ▼
+                Query Understanding
+                        │
+                        ▼
+                 Retrieval Decision
+                   /            \
+                 NO              YES
+                 │                │
+                 │                ▼
+                 │           Query Rewrite
+                 │                │
+                 │                ▼
+                 │             Retrieve
+                 │                │
+                 │                ▼
+                 │         Rerank Documents
+                 │                │
+                 │                ▼
+                 │          Grade Documents
+                 │                │
+                 │        ┌───────┴───────┐
+                 │        │               │
+                 │      Good            Bad
+                 │        │               │
+                 │        │               ▼
+                 │        │          Rewrite Query
+                 │        │               │
+                 │        └───────────────┘
+                 │
+                 ▼
+              Generate
+                 │
+                 ▼
+           Grounding Check
+                 │
+          ┌──────┴──────┐
+         Good           Bad
+          │              │
+          ▼              ▼
+     Quality Check     Retry
+          │
+     ┌────┴─────┐
+    Good       Bad
+     │           │
+     ▼           ▼
+    END       Rewrite
+```
+
+---
+
+# 41. Add a Reranker
+
+Vector similarity isn't always enough.
+
+Instead of:
+
+```text
+Retriever
+ ↓
+LLM
+```
+
+use:
+
+```text
+Retriever
+ ↓
+Top 20 documents
+ ↓
+Reranker
+ ↓
+Top 5 documents
+ ↓
+LLM
+```
+
+For example:
+
+```text
+Vector search
+       ↓
+Candidate documents
+       ↓
+Cross encoder / reranker
+       ↓
+Relevant documents
+```
+
+Then the Self-RAG evaluator operates on better candidates.
+
+---
+
+# 42. Add Web Search as a Fallback
+
+This is especially powerful.
+
+Suppose:
+
+```text
+Vector DB
+   ↓
+No relevant documents
+```
+
+Instead of just rewriting:
+
+```text
+Rewrite query
+   ↓
+Vector DB
+```
+
+you can do:
+
+```text
+              Grade Documents
+                     │
+              ┌──────┴──────┐
+             Good          Bad
+              │             │
+              ↓             ↓
+           Generate     Web Search
+                            ↓
+                       Grade Web Docs
+                            ↓
+                         Generate
+```
+
+Then your architecture becomes:
+
+```text
+Self-RAG + CRAG + Web Search
+```
+
+which is much more useful for real-world systems.
+
+---
+
+# 43. Structured Outputs Are Extremely Important
+
+For graders, don't ask:
+
+```text
+"Is this relevant?"
+```
+
+and expect:
+
+```text
+"Yes, definitely..."
+```
+
+Instead use structured output:
+
+```python
+class GradeDocument(BaseModel):
+
+    binary_score: str
+```
+
+Then:
+
+```python
+llm.with_structured_output(GradeDocument)
+```
+
+The model returns something like:
+
+```json
+{
+    "binary_score": "yes"
+}
+```
+
+This makes routing much more reliable.
+
+---
+
+# 44. The Role of State
+
+Your LangGraph state could eventually look like:
+
+```python
+class GraphState(TypedDict):
+
+    question: str
+
+    rewritten_question: str
+
+    documents: List[Document]
+
+    generation: str
+
+    retrieval_needed: bool
+
+    documents_relevant: bool
+
+    answer_grounded: bool
+
+    answer_useful: bool
+
+    attempts: int
+```
+
+Then the state represents the complete reasoning process.
+
+Conceptually:
+
+```text
+State
+ │
+ ├── question
+ ├── documents
+ ├── generation
+ ├── retrieval_needed
+ ├── documents_relevant
+ ├── answer_grounded
+ ├── answer_useful
+ └── attempts
+```
+
+---
+
+# 45. A Cleaner Production Architecture
+
+I would actually avoid putting every evaluator's result into state unless you need it later.
+
+Instead, keep state relatively small:
+
+```python
+class GraphState(TypedDict):
+
+    question: str
+    documents: list[Document]
+    generation: str
+    attempts: int
+```
+
+Then evaluators can make routing decisions without permanently storing every intermediate boolean.
+
+This keeps the graph easier to maintain.
+
+---
+
+# 46. Self-RAG and Your LangGraph Learning Path
+
+Given the LangGraph topics you've been studying, I would understand Self-RAG in this order:
+
+```text
+RAG
+ │
+ ├── Document loaders
+ ├── Text splitters
+ ├── Embeddings
+ ├── Vector stores
+ └── Retrievers
+        ↓
+Advanced RAG
+        ↓
+Corrective RAG
+        ↓
+Self-RAG
+        ↓
+Agentic RAG
+```
+
+And on the LangGraph side:
+
+```text
+LangGraph
+ │
+ ├── State
+ ├── Nodes
+ ├── Edges
+ ├── Conditional edges
+ ├── Loops
+ ├── Persistence
+ ├── Memory
+ ├── Tools
+ └── HITL
+        ↓
+     Self-RAG
+```
+
+---
+
+# 47. The Most Important Mental Model
+
+Don't memorize the code.
+
+Remember this:
+
+### Normal RAG
+
+```text
+"What should I answer?"
+```
+
+### CRAG
+
+```text
+"Are my retrieved documents good enough?"
+```
+
+### Self-RAG
+
+```text
+"Should I retrieve?"
+        ↓
+"Are the documents relevant?"
+        ↓
+"Is my answer supported?"
+        ↓
+"Is my answer actually good?"
+```
+
+That's the essence.
+
+---
+
+# 48. Self-RAG in One Diagram
+
+```text
+                         ┌──────────────┐
+                         │ USER QUESTION│
+                         └───────┬──────┘
+                                 │
+                                 ▼
+                      ┌────────────────────┐
+                      │ Should I Retrieve? │
+                      └─────────┬──────────┘
+                           NO /   \ YES
+                             /     \
+                            ▼       ▼
+                       Generate   Retrieve
+                           │         │
+                           │         ▼
+                           │    Grade Documents
+                           │         │
+                           │    ┌────┴────┐
+                           │  GOOD       BAD
+                           │    │          │
+                           │    │          ▼
+                           │    │       Rewrite
+                           │    │          │
+                           │    │          └─────┐
+                           │    │                │
+                           │    ▼                ▼
+                           │ Generate ←────── Retrieve
+                           │    │
+                           └────┤
+                                ▼
+                       ┌─────────────────┐
+                       │ Grounding Check │
+                       └────────┬────────┘
+                           GOOD │ BAD
+                             │    │
+                             │    └──────► Retry
+                             ▼
+                      ┌──────────────┐
+                      │ Quality Check│
+                      └──────┬───────┘
+                          GOOD│BAD
+                            │   │
+                            ▼   └──────► Rewrite/Retrieve
+                           END
+```
+
+## The key takeaway
+
+**Self-RAG is not simply "RAG with another LLM call."**
+
+It is a **feedback-controlled RAG system** where the model evaluates the quality of retrieval and generation and uses those evaluations to decide what to do next.
+
+And **LangGraph is a very natural implementation framework** because Self-RAG requires conditional routing and cycles:
+
+```python
+retrieve
+   ↓
+grade
+   ↓
+rewrite ────────┐
+   ↓            │
+retrieve ◄──────┘
+   ↓
+generate
+   ↓
+evaluate
+   ↓
+retry ──────────┐
+                │
+                └──→ retrieve/generate
+```
+
+For your learning path, the next useful step would be to implement **a complete production-style Self-RAG in LangGraph using Chroma + OpenAI embeddings + structured graders + query rewriting + web-search fallback + LangSmith tracing**, rather than only the simplified graph above.
