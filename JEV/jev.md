@@ -1,5 +1,9 @@
  **Jev**, the new **decision model from TypeSafe AI**. 
 
+ https://github.com/campusx-official/jev-demo
+
+ https://docs.typesafe.ai/introduction
+
 ## What is Jev?
 
 **Jev is a specialized AI model designed to make decisions rather than generate text.**
@@ -651,7 +655,3 @@ So the emerging architecture is essentially:
 **LLMs generate intelligence; specialized decision models turn that intelligence into fast, structured actions.**
 
 That's the part of Jev that I think is most worth studying—not simply "another AI model," but the idea of **separating reasoning from decision-making**.
-
-If you're learning ML/GenAI, I can next break down **Jev's architecture + RLCD mathematics + probability calibration + how to implement a mini-Jev from scratch in Python + Jev vs LLM vs classifier**, which would make the concept much clearer technically.
-
-
