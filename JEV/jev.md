@@ -498,3 +498,160 @@ The main LLM performs complex reasoning.
 Jev performs the small, repeated decisions.
 
 ---
+
+# Example with an ML project
+
+This is also where Jev becomes interesting for **machine-learning applications**.
+
+Imagine your ML pipeline predicts:
+
+```text
+fraud_probability = 0.73
+```
+
+Instead of hardcoding:
+
+```python
+if probability > 0.5:
+    fraud()
+```
+
+you could have a decision model consider additional contextual state:
+
+```text
+Transaction:
+    amount = $1200
+    country = ...
+    account_age = ...
+    previous_transactions = ...
+    model_probability = 0.73
+```
+
+Then ask:
+
+```text
+Should this transaction be sent for manual review?
+
+yes/no
+```
+
+Jev could produce a probabilistic decision.
+
+The important point, though, is that Jev **isn't necessarily replacing your underlying predictive model**. It can sit on top of your system as a decision layer.
+
+---
+
+# Jev + LangChain / LangGraph
+
+This is especially relevant to what you've been learning.
+
+You could have:
+
+```text
+              LangGraph
+                  │
+        ┌─────────┴─────────┐
+        │                   │
+      LLM                  Jev
+        │                   │
+ reasoning              decisions
+        │                   │
+        └─────────┬─────────┘
+                  ▼
+              next node
+```
+
+For example:
+
+```text
+START
+  ↓
+LLM
+  ↓
+Jev: "Should we call the search tool?"
+  ↓
+ ┌─────────────┐
+ │             │
+ YES           NO
+ │             │
+ ▼             ▼
+Search       Answer
+ │
+ ▼
+Jev: "Was search successful?"
+ │
+ ├── YES → Continue
+ │
+ └── NO  → Retry
+```
+
+This is a very natural architecture for **agentic workflows**.
+
+---
+
+# And something even more interesting was released yesterday
+
+There is now **AnyJev**, an open-source project from Nokia's applied research team.
+
+Unlike TypeSafe's proprietary Jev model, AnyJev is described as a **training-free layer that can turn an existing open LLM into a decision model**. It reads probabilities from the model's next-token distribution rather than generating and parsing a textual answer. ([MarkTechPost][5])
+
+Conceptually:
+
+```text
+Existing Open LLM
+       │
+       ▼
+    AnyJev
+       │
+       ▼
+Decision
+Choice / Score / Yes-No
+```
+
+That's potentially very interesting for experimentation because it could let developers investigate the **decision-model paradigm without training a completely new model**.
+
+---
+
+# Current Jev ecosystem
+
+Jev is already being integrated into developer infrastructure.
+
+Vercel announced Jev support through AI Gateway shortly after launch, describing applications such as routing, content flagging, and priority scoring. ([Vercel][3])
+
+Reports also indicate integrations involving platforms such as **Cloudflare, LangChain, and Langfuse**. ([Investing.com India][6])
+
+And on September 22, Aurora Mobile announced integration of Jev into GPTBots.ai as a separate decision layer alongside LLM-based reasoning. ([markets.businessinsider.com][7])
+
+So the emerging architecture is essentially:
+
+```text
+               ┌─────────────────┐
+               │      User       │
+               └────────┬────────┘
+                        │
+                        ▼
+               ┌─────────────────┐
+               │      LLM        │
+               │   Reasoning     │
+               └────────┬────────┘
+                        │
+                        ▼
+               ┌─────────────────┐
+               │      Jev        │
+               │    Decision     │
+               └────────┬────────┘
+                        │
+          ┌─────────────┼──────────────┐
+          ▼             ▼              ▼
+       Tool call       Retry          Human
+```
+
+### The big idea
+
+**LLMs generate intelligence; specialized decision models turn that intelligence into fast, structured actions.**
+
+That's the part of Jev that I think is most worth studying—not simply "another AI model," but the idea of **separating reasoning from decision-making**.
+
+If you're learning ML/GenAI, I can next break down **Jev's architecture + RLCD mathematics + probability calibration + how to implement a mini-Jev from scratch in Python + Jev vs LLM vs classifier**, which would make the concept much clearer technically.
+
+
